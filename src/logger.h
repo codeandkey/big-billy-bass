@@ -1,17 +1,17 @@
 #pragma once
 
 
+#ifndef LOGGING_DISABLED
+# define LOG(LEVEL, MESSAGE, ...) _logger::log(LEVEL, __FILE__, __LINE__, __func__, MESSAGE, ##__VA_ARGS__)
+# define DEBUG(MESSAGE, ...) LOG(_logger::LogLevel::DEBUG, MESSAGE, ##__VA_ARGS__)
+# define INFO(MESSAGE, ...) LOG(_logger::LogLevel::INFO, MESSAGE, ##__VA_ARGS__)
+# define WARNING(MESSAGE, ...) LOG(_logger::LogLevel::WARNING, MESSAGE, ##__VA_ARGS__)
+# define ERROR(MESSAGE, ...) LOG(_logger::LogLevel::ERROR, MESSAGE, ##__VA_ARGS__)
 
-#define LOG(LEVEL, MESSAGE, ...) b3::log(LEVEL, MESSAGE, ##__VA_ARGS__)
-#define DEBUG(MESSAGE, ...) LOG(b3::DEBUG, MESSAGE, ##__VA_ARGS__)
-#define INFO(MESSAGE, ...) LOG(b3::INFO, MESSAGE, ##__VA_ARGS__)
-#define WARNING(MESSAGE, ...) LOG(b3::WARNING, MESSAGE, ##__VA_ARGS__)
-#define ERROR(MESSAGE, ...) LOG(b3::ERROR, MESSAGE, ##__VA_ARGS__)
+#define SET_VERBOSE_LOGGING(VERBOSE) _logger::g_log_verbose = VERBOSE;
+namespace _logger {
 
-
-namespace b3 {
-
-    bool log_verbose = false;
+    bool g_log_verbose = false;
 
     enum LogLevel {
         DEBUG,
@@ -20,7 +20,17 @@ namespace b3 {
         ERROR
     };
 
-    void log(LogLevel level, const char *message, ...);
+    void log(LogLevel level, const char *file, int line, const char *func, const char *message, ...);
 
 
 }; // namespace b3
+
+#else
+# define DEBUG(MESSAGE, ...)
+# define INFO(MESSAGE, ...)
+# define WARNING(MESSAGE, ...)
+# define ERROR(MESSAGE, ...)
+
+#define SET_VERBOSE_LOGGING(VERBOSE)
+#endif
+
