@@ -22,7 +22,7 @@ void Task::setState(State new_state) {
 	std::lock_guard<std::mutex> lock(m_state_mutex);
 
 	if (m_inner_state != new_state) {
-		transitions.push_back({m_inner_state, new_state});
+		m_transitions.push_back({m_inner_state, new_state});
 		m_inner_state = new_state;
 	}
 }
@@ -42,11 +42,11 @@ void Task::spawn() {
 				current_state = m_inner_state;
 
 				// Replay pending transitions
-				for (auto& transition : transitions) {
+				for (auto& transition : m_transitions) {
 					onTransition(transition.first, transition.second);
 				}
 
-				transitions.clear();
+				m_transitions.clear();
 			}
 
 			frame(current_state);

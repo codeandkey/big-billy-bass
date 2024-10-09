@@ -28,13 +28,6 @@ public:
 	virtual void onTransition(State from, State to) {}
 
 	/**
-	 * Get the current task state.
-	 */
-	const State& getState() {
-		return m_inner_state;
-	}
-
-	/**
 	 * Called when the task is launched.
 	 */
 	virtual void onStart() {}
@@ -63,7 +56,7 @@ private:
 	// State synchronization
 	std::mutex              m_state_mutex;
 	State                   m_inner_state;
-	std::vector<Transition> transitions;
+	std::vector<Transition> m_transitions;
 
 	// Job control
 	std::thread*     job;
