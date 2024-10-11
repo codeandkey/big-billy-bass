@@ -11,7 +11,7 @@
 #define SET_VERBOSE_LOGGING(VERBOSE) _logger::g_log_verbose = VERBOSE;
 namespace _logger {
 
-    bool g_log_verbose = false;
+    extern bool g_log_verbose;
 
     enum LogLevel {
         DEBUG,

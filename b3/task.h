@@ -1,7 +1,9 @@
 #pragma once
 
-#include <cassert>
 #include <thread>
+#include <mutex>
+#include <vector>
+#include <atomic>
 
 #include "state.h"
 
@@ -11,7 +13,7 @@ typedef std::pair<State, State> Transition;
 
 class Task {
 public:
-	Task() : m_inner_state(State::STOPPED), m_should_stop(false) {}
+	Task() : m_inner_state(State::STOPPED), m_should_stop(false), job(nullptr) {}
 	virtual ~Task() = default;
 
 	/**

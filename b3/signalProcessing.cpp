@@ -1,7 +1,9 @@
 #include "signalProcessing.h"
+#include "gpioStream.h"
 
-#include <stdio.h>
-#include <stdlib.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <libavformat/avformat.h>
 
 
@@ -58,6 +60,7 @@ void audioProcessor::requestState(State command)
             m_activeState = State::PLAYING;
             m_fillBuffer = true;
             m_loadFile = true;
+	    m_chunkTimestamp = timeManager::getUsSinceEpoch();
         }
         break;
     case State::PAUSED:
@@ -103,6 +106,8 @@ int audioProcessor::update()
         }
         break;
     }
+
+    return 0;
 }
 
 int audioProcessor::_readChunk(uint8_t *buffer, FILE *fp, int readSize)
@@ -155,7 +160,8 @@ void audioProcessor::_processChunk()
     int hpfRead = _readChunk((uint8_t *)hpfSignal, m_activePipes.hpfPipe, m_chunkSize);
 
     m_chunkTimer = timeManager::getUsSinceEpoch();
-    //TODO: INSERT API CALL HERE
+    GpioStream::get().submit(lpfSignal, hpfSignal, m_chunkSize, m_chunkTimestamp);
+    m_chunkTimestamp += CHUNK_SIZE_MS * 1000;
 
     fwrite(buffer, 1, readSize, m_activePipes.playPipe);
 }
@@ -163,6 +169,11 @@ void audioProcessor::_processChunk()
 
 int audioProcessor::_openFile(char *inputFile)
 {
+#ifdef TEST_AUDIO
+#warning Overriding input file with test audio
+    inputFile = (char*) TEST_AUDIO;
+#endif // TEST_AUDIO
+
     _cleanUp();
 
     if (m_fileLoaded) {

@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdarg>
 
+bool _logger::g_log_verbose = false;
 
 pthread_mutex_t g_logMutex;
 bool g_mutexInitialized = false;

@@ -13,8 +13,9 @@ public:
 	}
 
 	template<typename T, typename ...Args>
-	void addTask(Args... args) {
-		m_tasks.push_back(std::make_unique<T>(args...));
+	T* addTask(Args... args) {
+		m_tasks.emplace_back(new T(args...));
+        return (T*) m_tasks.back();
 	}
 
 	/**
@@ -43,13 +44,14 @@ public:
 	void stopAll() {
 		for (auto& task : m_tasks) {
 			task->stop();
+            delete task;
 		}
 
 		m_tasks.clear();
 	}
 
 private:
-	std::vector<std::unique_ptr<Task>> m_tasks;
+	std::vector<Task*> m_tasks;
 
 }; // class Runner
 

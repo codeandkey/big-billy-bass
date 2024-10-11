@@ -1,5 +1,3 @@
-
-
 #ifndef __signalProcessing_h
 #define __signalProcessing_h
 
@@ -9,9 +7,8 @@
 #include "signalProcessingDefaults.h"
 #include "timeManager.h" 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstring>
+#include <cstdio>
 
 // #define INCLUDE_FFMPEG_LIBS
 
@@ -29,7 +26,8 @@ namespace b3 {
         audioProcessor() :
             m_fileLoaded(0),
             m_usePipes(FORCE_USE_PIPES),
-            m_chunkTimer(timeManager::getUsSinceEpoch())
+            m_chunkTimer(timeManager::getUsSinceEpoch()),
+	    m_activeState(State::STOPPED)
         {
             m_inputFileName[0] = '\0';
         }
@@ -38,7 +36,8 @@ namespace b3 {
             m_fileLoaded(0),
             m_usePipes(usePipes),
             m_chunkTimer(timeManager::getUsSinceEpoch()),
-            m_inputFileName(nullptr)
+            m_inputFileName(nullptr),
+	    m_activeState(State::STOPPED)
         {}
 #endif
         ~audioProcessor();
@@ -59,6 +58,12 @@ namespace b3 {
         void requestState(State command);
         inline void setLPF(float cutoff) { m_filterSettings.lpfCutoff = cutoff; }
         inline void setHPF(float cutoff) { m_filterSettings.hpfCutoff = cutoff; }
+
+        inline void loadFile(const char *inputFile) {
+            // TODO: sync me
+            strncpy(m_inputFileName, inputFile, FILE_NAME_BUFFER_SIZE);
+            m_signalFlags |= 0x02;
+        }
 
         uint64_t usToNextChunk();
 
@@ -123,6 +128,7 @@ namespace b3 {
         State m_activeState;
 
         uint64_t m_chunkTimer;
+        uint64_t m_chunkTimestamp;
         uint8_t m_chunkSize;
 
         char m_inputFileName[FILE_NAME_BUFFER_SIZE];
