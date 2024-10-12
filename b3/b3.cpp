@@ -52,7 +52,14 @@ int main(int argc, char** argv) {
     }
 
     runner.addTask<EchoTask>();
+
+#ifndef GPIO_TEST
     audioProcessor* processor = runner.addTask<audioProcessor>();
+#else
+#warning GPIO_TEST defined, not loading audio processor
+    WARNING("GPIO_TEST defined, not loading audio processor");
+#endif // GPIO_TEST
+
     runner.addTask<GpioStream>();
 
     INFO("Spawning tasks");
@@ -92,7 +99,9 @@ int main(int argc, char** argv) {
 
                 std::string path = std::string(buf + 5);
                 INFO("Loading file: %s", path.c_str());
+#ifndef GPIO_TEST
                 processor->loadFile(path.c_str());
+#endif // GPIO_TEST
             }
         }
         close(sock);

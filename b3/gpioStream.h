@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <cstdint>
-#include <optional>
 #include <queue>
 #include <vector>
 
@@ -10,9 +9,18 @@
 
 namespace b3 {
 
-constexpr int PIN_HEAD = 0;   // GPIO pin for fish head
-constexpr int PIN_TAIL = 0;   // GPIO pin for fish tail
-constexpr int PIN_MOUTH = 0;  // GPIO pin for fish mouth
+// Directional control pins, direction reversed by setting LOW pins to HIGH and vice versa
+constexpr int PIN_HEAD_HIGH = 22;
+constexpr int PIN_HEAD_LOW = 23;
+constexpr int PIN_TAIL_HIGH = 23;
+constexpr int PIN_TAIL_LOW = 22;
+constexpr int PIN_MOUTH_HIGH = 24;
+constexpr int PIN_MOUTH_LOW = 25;
+
+// Modulating pins for motor speed
+constexpr int PIN_HEAD_SPEED = 12;
+constexpr int PIN_TAIL_SPEED = 12;
+constexpr int PIN_MOUTH_SPEED = 13;
 
 constexpr int AUDIO_SAMPLE_RATE = 44100;  // default audio hz
 constexpr int GPIO_WINDOW = 250;          // GPIO sample window in ms
