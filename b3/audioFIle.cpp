@@ -19,26 +19,26 @@ b3::audioFile::~audioFile()
 int b3::audioFile::openFile(const char *fileName)
 {
     pthread_mutex_lock(&m_fileMutex);
-    
-    m_formateContext = avformat_alloc_context();
-    if (!m_formateContext) {
+
+    m_formatContext = avformat_alloc_context();
+    if (!m_formatContext) {
         ERROR("Failed to allocate format context");
         goto openFileErrorCleanup;
     }
 
     // open the file
-    if (avformat_open_input(&m_formateContext, m_audioFileName, nullptr, nullptr) < 0) {
-        WARNING("Failed to open file: %s", m_audioFileName);
+    if (avformat_open_input(&m_formatContext, fileName, nullptr, nullptr) < 0) {
+        WARNING("Failed to open file: %s", fileName);
         goto openFileErrorCleanup;
     }
 
     // get the stream info
-    if (avformat_find_stream_info(m_formateContext, nullptr) < 0) {
+    if (avformat_find_stream_info(m_formatContext, nullptr) < 0) {
         WARNING("Failed to find stream info");
         goto openFileErrorCleanup;
     }
     // find the audio stream
-    m_streamIndx = av_find_best_stream(m_formateContext, AVMEDIA_TYPE_AUDIO, -1, -1, &m_decoder, 0);
+    m_streamIndx = av_find_best_stream(m_formatContext, AVMEDIA_TYPE_AUDIO, -1, -1, &m_decoder, 0);
     if (m_streamIndx < 0) {
         WARNING("Failed to find audio stream");
         goto openFileErrorCleanup;
@@ -46,8 +46,11 @@ int b3::audioFile::openFile(const char *fileName)
     // get the codec context
     m_decoderContext = avcodec_alloc_context3(m_decoder);
 
+    // set packet time base?
+    m_decoderContext->pkt_timebase = m_formatContext->streams[m_streamIndx]->time_base;
+
     // get the codec parameters
-    avcodec_parameters_to_context(m_decoderContext, m_formateContext->streams[m_streamIndx]->codecpar);
+    avcodec_parameters_to_context(m_decoderContext, m_formatContext->streams[m_streamIndx]->codecpar);
 
     if (avcodec_open2(m_decoderContext, m_decoder, nullptr) < 0) {
         WARNING("Failed to open codec");
@@ -56,6 +59,7 @@ int b3::audioFile::openFile(const char *fileName)
     }
 
     strncpy(m_audioFileName, fileName, FILE_NAME_BUFFER_SIZE);
+    m_frame = av_frame_alloc();
     m_fileOpen = true;
 
     pthread_mutex_unlock(&m_fileMutex);
@@ -75,9 +79,9 @@ void b3::audioFile::closeFile()
             avcodec_free_context(&m_decoderContext);
             m_decoderContext = nullptr;
         }
-        if (m_formateContext) {
-            avformat_close_input(&m_formateContext);
-            m_formateContext = nullptr;
+        if (m_formatContext) {
+            avformat_close_input(&m_formatContext);
+            m_formatContext = nullptr;
         }
         if (m_frame) {
             av_frame_free(&m_frame);
@@ -90,7 +94,7 @@ void b3::audioFile::closeFile()
 
     // debug checks
     assert(m_decoderContext == nullptr);
-    assert(m_formateContext == nullptr);
+    assert(m_formatContext == nullptr);
     assert(m_decoder == nullptr);
     assert(m_frame == nullptr);
     assert(m_streamIndx == -1);
@@ -131,9 +135,9 @@ int b3::audioFile::readChunk(uint8_t *buffer, int readSize)
     }
 
     assert(totalRead <= readSize);
-    
+
     pthread_mutex_unlock(&m_fileMutex);
-    
+
     return totalRead;
 }
 
@@ -145,12 +149,12 @@ int b3::audioFile::_readFrame(AVFrame *frame)
     }
 
     AVPacket packet;
-    av_init_packet(&packet);
+    av_new_packet(&packet, 0);
     packet.data = nullptr;
     packet.size = 0;
     int ret;
 
-    if (av_read_frame(m_formateContext, &packet) < 0) {
+    if (av_read_frame(m_formatContext, &packet) < 0) {
         WARNING("Failed to read frame");
         goto errorCleanup;
     }

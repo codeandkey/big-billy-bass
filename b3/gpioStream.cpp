@@ -21,7 +21,7 @@ using namespace std;
 
 GpioStream* GpioStream::s_instance = nullptr;
 
-GpioStream::GpioStream(GpioStreamConfig config) : m_config(config) {
+GpioStream::GpioStream(GpioStreamConfig config) : m_config(config), m_low_mouth_frames(0) {
     assert(!s_instance);
     s_instance = this;
 }
@@ -37,7 +37,12 @@ GpioStream& GpioStream::get() {
 }
 
 void GpioStream::onStart() {
-    gpioInitialise();
+    m_init_ok = true;
+
+    if (gpioInitialise() < 0) {
+        ERROR("GPIO init failed");
+	m_init_ok = false;
+    }
 
     gpioSetMode(PIN_HEAD_HIGH, PI_OUTPUT);
     gpioSetMode(PIN_HEAD_LOW, PI_OUTPUT);
@@ -50,15 +55,16 @@ void GpioStream::onStart() {
     gpioSetMode(PIN_MOUTH_SPEED, PI_OUTPUT);
 }
 
-void GpioStream::onStop() { gpioTerminate(); }
+void GpioStream::onStop() {
+    if (m_init_ok)
+        gpioTerminate();
+}
 
 void GpioStream::frame(State state) {
-    uint64_t now = timeManager::getUsSinceEpoch();
-
-    if (!m_live_chunk.lpf.size()) {
-        // No chunks received yet
+    if (!m_init_ok)
         return;
-    }
+
+    uint64_t now = timeManager::getUsSinceEpoch();
 
     // Lock config for the duration of this frame
     GpioStreamConfig config;
@@ -78,6 +84,26 @@ void GpioStream::frame(State state) {
     // No GPIO data available in this chunk, try and load the next one
     {
         lock_guard<mutex> lock(m_pending_chunks_mutex);
+
+        // If we're in testing mode, generate a chunk with on/off switching cycles
+#ifdef GPIO_TEST
+	if (m_pending_chunks.empty()) {
+		AudioSample chunk[config.sample_rate * 4]; // 1 second worth of samples
+		memset(chunk, 0, sizeof(chunk));
+
+		// half on, half off
+		for (int j = 0; j < sizeof(chunk) / sizeof(chunk[0]) / 2; ++j) {
+		    chunk[j] = 32767;
+		}
+
+	        m_pending_chunks.emplace(GpioChunk(vector<AudioSample>(chunk, chunk + sizeof(chunk) / sizeof(chunk[0])),
+					           vector<AudioSample>(chunk, chunk + sizeof(chunk) / sizeof(chunk[0])),
+	    				           now));
+
+		DEBUG("GPIO loaded test chunk");
+		return;
+	}
+#endif
 
         // Verify the stream isn't dead
         if (m_pending_chunks.empty()) {
@@ -104,23 +130,6 @@ void GpioStream::frame(State state) {
             m_pending_chunks.pop();
         }
 
-        // If we're in testing mode, generate a chunk with on/off switching cycles
-#ifdef GPIO_TEST
-        char chunk[config.sample_rate]; // 1 second worth of samples
-        memset(chunk, 0, sizeof(chunk));
-
-        // 0.5 second on, 0.5 second off
-        for (int j = 0; j < config.sample_rate < 2) {
-            chunk[j] = 0xFFFF;
-        }
-
-        m_live_chunk = GpioChunk(vector<AudioSample>(chunk, chunk + sizeof(chunk)),
-                                 vector<AudioSample>(chunk, chunk + sizeof(chunk)),
-                                 now);
-
-        return;
-#endif
-
         // There were chunks in the stream, but none mapping to a good GPIO
         // frame Write a warning if we're in the PLAYING state
         if (state == State::PLAYING) {
@@ -132,14 +141,32 @@ void GpioStream::frame(State state) {
 void GpioStream::_applyGpioFrame(const GpioFrame& data) {
     // Convert LPF/HPF to fish limbs
     // TODO : switch between head and tail actuation
+    if (data.hpf > 32768) {
+	    gpioWrite(PIN_MOUTH_HIGH, 1);
+	    gpioWrite(PIN_MOUTH_LOW, 0);
+            m_low_mouth_frames = 0; 
+    } else {
+	    gpioWrite(PIN_MOUTH_LOW, 1);
+	    gpioWrite(PIN_MOUTH_HIGH, 0);
+            m_low_mouth_frames++;
+    }
 
-    gpioWrite(PIN_HEAD_HIGH, 1);
-    gpioWrite(PIN_HEAD_LOW, 0);
-    gpioWrite(PIN_MOUTH_HIGH, 1);
-    gpioWrite(PIN_MOUTH_LOW, 0);
+    gpioWrite(PIN_TAIL_HIGH, 1);
+    gpioWrite(PIN_TAIL_LOW, 0);
 
-    gpioPWM(PIN_MOUTH_SPEED, data.hpf >> 16);
-    gpioPWM(PIN_TAIL_SPEED, data.lpf >> 16);
+    int mouth_speed = 0;
+
+    if (m_low_mouth_frames < 500) {
+        mouth_speed = 255;
+    } else {
+        mouth_speed = 0;
+    }
+
+    gpioPWM(PIN_HEAD_SPEED, data.lpf >> 8);
+    gpioPWM(PIN_MOUTH_SPEED, mouth_speed);
+
+    DEBUG("Recv data hpf %d lpf %d", data.hpf, data.lpf);
+    DEBUG("Write mouth speed %d, tail speed %d", mouth_speed, data.lpf >> 8);
 }
 
 int GpioChunk::_extractGpioFrame(uint64_t now, const GpioStreamConfig& config,
@@ -154,7 +181,7 @@ int GpioChunk::_extractGpioFrame(uint64_t now, const GpioStreamConfig& config,
     int window_width = config.gpio_window * config.sample_rate /
                        1000;  // TODO: moveme to const
     int window_low = max(0, sample_index - window_width / 2);
-    int window_high = min((int)lpf.size(), sample_index + window_width / 2);
+    int window_high = min((int)lpf.size() - 1, sample_index + window_width / 2);
     int window_size = window_high - window_low;
 
     frame.lpf = _filterSamples(&lpf[window_low], window_size, config.gain[LPF],
@@ -171,7 +198,7 @@ uint16_t GpioChunk::_filterSamples(const AudioSample* sample, int count,
     int upper = int(numeric_limits<uint16_t>::max());
 
     for (int i = 0; i < count; i++) {
-        avg += sample[i];
+        avg += abs(sample[i]) * 2;
     }
 
     avg /= count;
@@ -185,6 +212,9 @@ uint16_t GpioChunk::_filterSamples(const AudioSample* sample, int count,
 
 void GpioStream::submit(AudioSample* lpf, AudioSample* hpf, int samples,
                         uint64_t start_time) {
+    if (!m_init_ok)
+        return;
+
     // Quickly copy data to pending chunks and return
     lock_guard<mutex> lock(m_pending_chunks_mutex);
 

@@ -1,9 +1,10 @@
 #pragma once
 
 #include <pthread.h>
-
+extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+}
 
 #include <cassert>
 
@@ -13,10 +14,11 @@ namespace b3 {
     class audioFile {
     public:
         audioFile() :
-            m_formateContext(nullptr),
+            m_formatContext(nullptr),
             m_decoderContext(nullptr),
             m_decoder(nullptr),
             m_streamIndx(-1),
+            m_frame(nullptr),
             m_frameHead(0),
             m_fileOpen(false)
         {
@@ -25,7 +27,7 @@ namespace b3 {
         }
 
         audioFile(char *fileName) :
-            m_formateContext(nullptr),
+            m_formatContext(nullptr),
             m_decoderContext(nullptr),
             m_decoder(nullptr),
             m_streamIndx(-1),
@@ -104,9 +106,9 @@ namespace b3 {
 
 
 
-        AVFormatContext *m_formateContext;
+        AVFormatContext *m_formatContext;
         AVCodecContext *m_decoderContext;
-        AVCodec *m_decoder;
+        const AVCodec *m_decoder;
         AVFrame *m_frame;   // used for reading frames, most recent frame read is stored here
         int8_t m_streamIndx;
 

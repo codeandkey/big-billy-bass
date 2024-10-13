@@ -14,6 +14,7 @@
     (U8_TO_U16_LE(buffer[ndx], buffer[ndx + 1]) +  \
     U8_TO_U16_LE(buffer[ndx + 2], buffer[ndx + 3])) / 2) 
 
+#define MIN(a,b) ((a < b) ? (a) : (b))
 
 using namespace b3;
 
@@ -26,8 +27,8 @@ void signalProcessor::frame(State state)
 {
     assert(m_activeState == state);
 
-    if (usToNextChunk() > 0)
-        return;
+    uint64_t dt = usToNextChunk();
+    usleep(MIN(dt, CHUNK_SIZE_MS * 1000 * 9 / 10));
 
     if (m_activeState == State::PLAYING) {
         if (m_fillBuffer) {
@@ -37,6 +38,8 @@ void signalProcessor::frame(State state)
         }
         _processChunk();
     }
+    if (dt == 0)
+        DEBUG("Possible chunk underrun likely due to process timing");
 }
 
 
@@ -46,7 +49,7 @@ void signalProcessor::onTransition(State from, State to)
     // process State transitions
     if (m_activeState == to)
         return;
-    
+
     assert(m_activeState == from);
 
     switch (to) {
@@ -55,11 +58,15 @@ void signalProcessor::onTransition(State from, State to)
             ERROR("audioProcessor - No audio driver loaded");
             return;
         }
+        assert(m_alsaDriver);
         if (!m_fileLoaded) {
             ERROR("audioProcessor - No audio file loaded");
             return;
         }
+        assert(m_audioFile);
+        m_alsaDriver->updateAudioChannelData(m_audioFile->getBitRate(), m_audioFile->getChannels());
         m_fillBuffer = true;
+        m_chunkTimestamp = timeManager::getUsSinceEpoch();
 
         break;
     case State::PAUSED:
@@ -86,12 +93,13 @@ void signalProcessor::onTransition(State from, State to)
 }
 
 
-inline void signalProcessor::setAudioDriver(audioDriver *driver)
+void signalProcessor::setAudioDriver(audioDriver *driver)
 {
     if (!driver) {
         ERROR("audioProcessor - Null audio driver pointer");
         return;
     }
+    m_alsaDriver = driver;
     m_driverLoaded = true;
 }
 
@@ -110,21 +118,18 @@ void signalProcessor::setFile(audioFile *F)
     m_chunkSize = m_audioFile->calculateChunkSize();
 
     // create filters
-    m_lpf = new biQuadFilter(m_audioFile->getBitRate(), m_filterSettings.lpfCutoff, Q, GAIN, filterType::LPF);
-    m_hpf = new biQuadFilter(m_audioFile->getBitRate(), m_filterSettings.hpfCutoff, Q, GAIN, filterType::HPF);
-
-    // configure audio driver
-    m_alsaDriver->updateAudioChannelData(m_audioFile->getBitRate(), m_audioFile->getChannels());
+    m_lpf = new biQuadFilter(m_audioFile->getBitRate(), m_filterSettings.lpfCutoff, Q, GAIN, filterType::LPF_type);
+    m_hpf = new biQuadFilter(m_audioFile->getBitRate(), m_filterSettings.hpfCutoff, Q, GAIN, filterType::HPF_type);
 }
 
 
 uint64_t signalProcessor::usToNextChunk()
 {
     uint64_t t = timeManager::getUsSinceEpoch();
-    if (t > m_chunkTimer + CHUNK_SIZE_MS * 1000)
+    if (t > m_chunkTimestamp)
         return 0;
 
-    return m_chunkTimer + CHUNK_SIZE_MS * 1000 - t;
+    return m_chunkTimestamp - t;
 }
 
 int signalProcessor::_processChunk()
@@ -152,12 +157,13 @@ int signalProcessor::_processChunk()
     }
 
     // GPIO API call
-    m_chunkTimer = timeManager::getUsSinceEpoch();
     GpioStream::get().submit(lpfSignal, hpfSignal, m_chunkSize / bytes2pcm16, m_chunkTimestamp);
     m_chunkTimestamp += CHUNK_SIZE_MS * 1000;
 
     // write audio data to the audio driver
-    m_alsaDriver->writeAudioData(pcm16Buff, bytesRead);
+    if (m_alsaDriver->writeAudioData(pcm16Buff, bytesRead) == -EPIPE) {
+        // do something
+    }
 
     return 0;
 }

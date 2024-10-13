@@ -1,18 +1,18 @@
 #pragma once
 
 #include <cstdint>
-
+#include <cstring>
 
 namespace b3 {
 
     enum filterType {
-        LPF,
-        HPF
+        LPF_type,
+        HPF_type
     }; // enum filterType
 
 
-    #define Q 0.707
-    #define GAIN 1
+#define Q 0.707
+#define GAIN 1
 
 
     class biQuadFilter {
@@ -27,10 +27,11 @@ namespace b3 {
             m_filterType(type)
         {
             updateCoeffs();
+            zero();
         }
 
         // setters
-        
+
         inline void setSampleRate(float sampleRate) { m_sampleRate = sampleRate; updateCoeffs(); }
         inline void setCutoff(float cutoff) { m_cutoff = cutoff; updateCoeffs(); }
         inline void setQ(float q) { m_q = q; updateCoeffs(); }
@@ -38,6 +39,12 @@ namespace b3 {
 
         // updates buffers with new sample. Returns filtered sample
         float update(float sample);
+
+        inline void zero()
+        {
+            m_x.zero();
+            m_y.zero();
+        }
 
     private:
         // updates coefficients based on filter type
@@ -64,6 +71,8 @@ namespace b3 {
                 m_buffer[m_ndx] = sample;
                 m_ndx = (m_ndx + 1) % m_order;
             }
+
+            inline void zero() { memset(m_buffer, 0, m_order); }
 
         private:
             sampleType *m_buffer;

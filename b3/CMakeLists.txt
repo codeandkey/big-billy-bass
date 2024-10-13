@@ -1,28 +1,15 @@
-add_executable(b3
-    b3.cpp
-    task.cpp
-    gpioStream.cpp
-    signalProcessing.cpp
-    logger.cpp
-    timeManager.cpp
-)
+cmake_minimum_required (VERSION 3.5)
+project (BigBillyBass)
 
-target_link_libraries(b3 avformat)
+set (CMAKE_CXX_STANDARD 17)
+set (CMAKE_BUILD_TYPE Debug)
 
-# Uncomment to enable pigpio
-#set (PIGPIO_ENABLE 1)
-
-# Uncomment to enable GPIO test
-#set (GPIO_TEST 1)
-
-if (PIGPIO_ENABLE)
-    target_compile_definitions(b3 PUBLIC ENABLE_PIGPIO)
-    target_link_libraries(b3 pigpio)
+# In the event you have a broken xcode toolchain
+if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    include_directories(/opt/homebrew/include)
+    link_directories(/opt/homebrew/lib)
+    #set (CMAKE_CXX_COMPILER g++-14)
+    #set (CMAKE_C_COMPILER gcc-14)
 endif()
 
-if (GPIO_TEST)
-    target_compile_definitions(b3 PUBLIC GPIO_TEST)
-endif()
-
-# Comment to disable audio override
-target_compile_definitions(b3 PUBLIC TEST_AUDIO="test.mp3")
+add_subdirectory (b3)

@@ -19,12 +19,12 @@ namespace b3 {
     public:
         signalProcessor() :
             m_fileLoaded(0),
-            m_chunkTimer(timeManager::getUsSinceEpoch()),
             m_activeState(State::STOPPED),
             m_audioFile(nullptr),
             m_lpf(nullptr),
             m_hpf(nullptr),
-            m_alsaDriver(nullptr)
+            m_alsaDriver(nullptr),
+            m_chunkTimestamp(timeManager::getUsSinceEpoch())
         {}
         
         ~signalProcessor();
@@ -91,7 +91,7 @@ namespace b3 {
          *
          * @param driver 
          */
-        inline void setAudioDriver(audioDriver *driver);
+        void setAudioDriver(audioDriver *driver);
 
         /**
          * @brief
@@ -100,7 +100,7 @@ namespace b3 {
          * @note
          * F is NOT owned by the audioProcessor and must be managed by the caller
          */
-        inline void setFile(audioFile *F);
+        void setFile(audioFile *F);
 
         /**
          * @brief
@@ -185,8 +185,7 @@ namespace b3 {
         
         audioDriver *m_alsaDriver;
 
-        uint64_t m_chunkTimer;
         uint64_t m_chunkTimestamp;
-        uint8_t m_chunkSize;
+        uint16_t m_chunkSize;
     };
 };

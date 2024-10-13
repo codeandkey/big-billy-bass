@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
         }
         if (std::string(argv[i]) == "-f" && i + 1 < argc) {
             strncpy(fileName, argv[i + 1], sizeof(fileName));
-            INFO("Logging to file: %s", argv[i + 1]);
+            INFO("loading sound file: %s", argv[i + 1]);
             i++;
         }
     }
@@ -67,9 +67,7 @@ int main(int argc, char** argv) {
 
 #ifndef GPIO_TEST
     signalProcessor *processor = runner.addTask<signalProcessor>();
-    processor->setFile(&file);
     processor->setAudioDriver(&driver);
-
 #else
 #warning GPIO_TEST defined, not loading audio processor
     WARNING("GPIO_TEST defined, not loading audio processor");
@@ -81,6 +79,9 @@ int main(int argc, char** argv) {
     runner.spawn();
 
     INFO("Starting play");
+                                
+    processor->setFile(&file);
+
     runner.setState(State::PLAYING);
 
     auto handleconn = [&](int sock) {
@@ -114,16 +115,16 @@ int main(int argc, char** argv) {
 
                 std::string path = std::string(buf + 5);
                 INFO("Loading file: %s", path.c_str());
-#ifndef GPIO_TEST
-                processor->loadFile(path.c_str());
-#endif // GPIO_TEST
             }
         }
         close(sock);
         INFO("Terminated session");
     };
 
-    unlink(SOCKPATH);
+    if (unlink(SOCKPATH) < 0) {
+        perror("socket");
+        ERROR("Failed to unlink %s", SOCKPATH);
+    }
 
     int listener = socket(AF_UNIX, SOCK_STREAM, 0);
     if (listener < 0) {
