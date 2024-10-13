@@ -15,15 +15,6 @@ constexpr uint8_t FILE_NAME_BUFFER_SIZE = 255;
 constexpr float LPF_CUTOFF_DEFAULT = 20000; // most music won't have noise above 20kHz if well mastered
 constexpr float HPF_CUTOFF_DEFAULT = 0;     // most music won't have noise below 20Hz if well mastered
 
-
-
-typedef struct audioFileSettings {
-    uint16_t sampleRate;
-    uint8_t channels;
-};
-
-
-
 typedef struct filterSettings {
 
     filterSettings() :
@@ -34,7 +25,5 @@ typedef struct filterSettings {
     float lpfCutoff;        //low pass filter cutoff (Hz)
     float hpfCutoff;        //high pass filter cutoff (Hz)
 };
-
-
 
 #endif // __signalProcessingDefaults_h

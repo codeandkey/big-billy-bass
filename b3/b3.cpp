@@ -15,6 +15,8 @@ extern "C" {
 #include "signalProcessing.h"
 #include "state.h"
 #include "task.h"
+#include "audioDriver.h"
+#include "audioFile.h"
 
 constexpr const char* SOCKPATH = "/tmp/b3.sock";
 
@@ -43,18 +45,31 @@ class EchoTask : public Task {
 
 int main(int argc, char** argv) {
     Runner runner;
-
+    char fileName[255] = "test.mp3";
     for (int i = 0; i < argc; ++i) {
         if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
-            _logger::g_log_verbose = true;
+            SET_VERBOSE_LOGGING(true);
             INFO("Verbose logging enabled");
+        }
+        if (std::string(argv[i]) == "-f" && i + 1 < argc) {
+            strncpy(fileName, argv[i + 1], sizeof(fileName));
+            INFO("Logging to file: %s", argv[i + 1]);
+            i++;
         }
     }
 
+    audioDriver driver = audioDriver();
+    audioFile file = audioFile(fileName);
+
     runner.addTask<EchoTask>();
 
+
+
 #ifndef GPIO_TEST
-    audioProcessor* processor = runner.addTask<audioProcessor>();
+    signalProcessor *processor = runner.addTask<signalProcessor>();
+    processor->setFile(&file);
+    processor->setAudioDriver(&driver);
+
 #else
 #warning GPIO_TEST defined, not loading audio processor
     WARNING("GPIO_TEST defined, not loading audio processor");
