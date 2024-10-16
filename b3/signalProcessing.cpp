@@ -27,19 +27,23 @@ void signalProcessor::frame(State state)
 {
     assert(m_activeState == state);
 
-    uint64_t dt = usToNextChunk();
-    usleep(MIN(dt, CHUNK_SIZE_MS * 1000 * 9 / 10));
 
-    if (m_activeState == State::PLAYING) {
+    if (m_activeState == State::PLAYING && !m_stopCommand) {
+
+        uint64_t dt = usToNextChunk();
+        usleep(MIN(dt, CHUNK_SIZE_MS * 1000 * 9 / 10));
+
         if (m_fillBuffer) {
             m_fillBuffer = false;
             for (int i = 0; i < CHUNK_COUNT - 1; i++)
                 _processChunk();
         }
         _processChunk();
+
+        if (dt == 0)
+            DEBUG("Possible chunk underrun likely due to process timing");
     }
-    if (dt == 0)
-        DEBUG("Possible chunk underrun likely due to process timing");
+    
 }
 
 
@@ -51,6 +55,8 @@ void signalProcessor::onTransition(State from, State to)
         return;
 
     assert(m_activeState == from);
+
+    int pcm16BitRate;
 
     switch (to) {
     case State::PLAYING:
@@ -64,10 +70,21 @@ void signalProcessor::onTransition(State from, State to)
             return;
         }
         assert(m_audioFile);
-        m_alsaDriver->updateAudioChannelData(m_audioFile->getBitRate(), m_audioFile->getChannels());
-        m_fillBuffer = true;
-        m_chunkTimestamp = timeManager::getUsSinceEpoch();
 
+        // need to calculate new bitrate since we are converting to pcm16 data
+        pcm16BitRate = m_audioFile->getSampleRate() * m_audioFile->getChannels() * 8 * 2;
+        // chunk size is re-negotiated here
+        m_chunkSize = m_alsaDriver->updateAudioChannelData(pcm16BitRate,
+            m_audioFile->getChannels(),
+            m_chunkSize);
+
+        // set
+        m_chunkSizeMS = m_chunkSize * 1000 / 4 / m_audioFile->getSampleRate();
+        m_chunkTimestamp = timeManager::getUsSinceEpoch();
+        
+        // set flags
+        m_stopCommand = 0;
+        m_fillBuffer = true;
         break;
     case State::PAUSED:
         if (m_activeState == State::STOPPED) {
@@ -115,11 +132,11 @@ void signalProcessor::setFile(audioFile *F)
     }
     m_audioFile = F;
     m_fileLoaded = true;
-    m_chunkSize = m_audioFile->calculateChunkSize();
+    m_chunkSize = m_audioFile->chunkSizeBytes();
 
     // create filters
-    m_lpf = new biQuadFilter(m_audioFile->getBitRate(), m_filterSettings.lpfCutoff, Q, GAIN, filterType::LPF_type);
-    m_hpf = new biQuadFilter(m_audioFile->getBitRate(), m_filterSettings.hpfCutoff, Q, GAIN, filterType::HPF_type);
+    m_lpf = new biQuadFilter(m_audioFile->getSampleRate(), m_filterSettings.lpfCutoff, Q, GAIN, filterType::LPF_type);
+    m_hpf = new biQuadFilter(m_audioFile->getSampleRate(), m_filterSettings.hpfCutoff, Q, GAIN, filterType::HPF_type);
 }
 
 
@@ -150,6 +167,13 @@ int signalProcessor::_processChunk()
     // read PCM16 data from the audio file
     int bytesRead = m_audioFile->readChunk(pcm16Buff, m_chunkSize);
 
+    // check for eof
+    if (bytesRead <= 0) {
+        INFO("EOF Detected");
+        m_stopCommand = 1;
+        return 0;
+    }
+
     for (int i = 0; i < bytesRead; i += 4) {
         // convert stereo to mono, apply filters
         lpfSignal[i / 4] = m_lpf->update((float)PCM_STEREO_TO_MONO(pcm16Buff, i));
@@ -158,10 +182,10 @@ int signalProcessor::_processChunk()
 
     // GPIO API call
     GpioStream::get().submit(lpfSignal, hpfSignal, m_chunkSize / bytes2pcm16, m_chunkTimestamp);
-    m_chunkTimestamp += CHUNK_SIZE_MS * 1000;
+    m_chunkTimestamp += m_chunkSizeMS;
 
     // write audio data to the audio driver
-    if (m_alsaDriver->writeAudioData(pcm16Buff, bytesRead) == -EPIPE) {
+    if (m_alsaDriver->writeAudioData(pcm16Buff, bytesRead / bytes2pcm16)) {
         // do something
     }
 

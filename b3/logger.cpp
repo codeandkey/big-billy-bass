@@ -8,6 +8,7 @@
 #include <stdio.h>
 
 #include <chrono>
+#include <ctime>
 #include <cstdarg>
 
 
@@ -116,13 +117,13 @@ void _logger::log(LogLevel level, const char *file, int line, const char *func, 
     va_start(args, message);
     switch (level) {
     case DEBUG:
-        printf("" BYEL "[DEBUG]" reset " ");
+        printf("" BBLU "[DEBUG]" reset " ");
         break;
     case INFO:
         printf("" BGRN "[INFO]" reset " ");
         break;
     case WARNING:
-        printf("" BGRN "[WARNING]" reset " ");
+        printf("" BYEL "[WARNING]" reset " ");
         break;
     case ERROR:
         printf("" BRED "[ERROR]" reset " ");

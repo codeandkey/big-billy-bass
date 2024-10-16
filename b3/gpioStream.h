@@ -24,7 +24,7 @@ constexpr int PIN_MOUTH_SPEED = 1;
 
 constexpr int AUDIO_SAMPLE_RATE = 44100;  // default audio hz
 constexpr int GPIO_WINDOW = 250;          // GPIO sample window in ms
-constexpr float GPIO_GAIN = 1.0f;         // default GPIO gain
+constexpr float GPIO_GAIN = 2.0f;         // default GPIO gain
 constexpr float GPIO_THRESHOLD = 0.5f;    // default GPIO threshold
 
 typedef int16_t AudioSample;

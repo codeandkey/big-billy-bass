@@ -7,6 +7,7 @@ extern "C" {
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <signal.h>
 }
 
 #include "gpioStream.h"
@@ -21,6 +22,13 @@ extern "C" {
 constexpr const char* SOCKPATH = "/tmp/b3.sock";
 
 using namespace b3;
+
+static std::atomic_bool sigint_flag;
+
+static void sigint_handler(int _sig) {
+    INFO("In SIGINT handler");
+    sigint_flag.store(true);
+}
 
 class EchoTask : public Task {
     public:
@@ -44,7 +52,15 @@ class EchoTask : public Task {
 };
 
 int main(int argc, char** argv) {
+    struct sigaction sa = {0};
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = sigint_handler;
+    sigaction(SIGINT, &sa, NULL);
+
     Runner runner;
+    float lpf;
+    float hpf;
     char fileName[255] = "test.mp3";
     for (int i = 0; i < argc; ++i) {
         if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
@@ -56,6 +72,16 @@ int main(int argc, char** argv) {
             INFO("loading sound file: %s", argv[i + 1]);
             i++;
         }
+        if (std::string(argv[i]) == "-lpf" && i + 1 < argc) {
+            lpf = std::stod(argv[i+1]);
+            INFO("LPF setting: %s", argv[i + 1]);
+            i++;
+        }
+        if (std::string(argv[i]) == "-hpf" && i + 1 < argc) {
+            lpf = std::stod(argv[i + 1]);
+            INFO("HPF setting: %s", argv[i + 1]);
+            i++;
+        }
     }
 
     audioDriver driver = audioDriver();
@@ -63,11 +89,11 @@ int main(int argc, char** argv) {
 
     runner.addTask<EchoTask>();
 
-
-
 #ifndef GPIO_TEST
     signalProcessor *processor = runner.addTask<signalProcessor>();
     processor->setAudioDriver(&driver);
+    processor->setLPF(lpf);
+    processor->setHPF(hpf);
 #else
 #warning GPIO_TEST defined, not loading audio processor
     WARNING("GPIO_TEST defined, not loading audio processor");
@@ -121,11 +147,6 @@ int main(int argc, char** argv) {
         INFO("Terminated session");
     };
 
-    if (unlink(SOCKPATH) < 0) {
-        perror("socket");
-        ERROR("Failed to unlink %s", SOCKPATH);
-    }
-
     int listener = socket(AF_UNIX, SOCK_STREAM, 0);
     if (listener < 0) {
         perror("socket");
@@ -136,6 +157,11 @@ int main(int argc, char** argv) {
     sockaddr_un addr;
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, SOCKPATH, sizeof(addr.sun_path) - 1);
+
+    if (unlink(SOCKPATH) < 0) {
+        perror("unlink");
+        ERROR("Failed to unlink socket");
+    }
 
     if (bind(listener, (sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind");
@@ -148,6 +174,20 @@ int main(int argc, char** argv) {
         ERROR("Failed to listen on socket");
         return 1;
     }
+
+    // Activate SIGINT watchdog
+    std::thread sigint_watchdog = std::thread([&]() {
+        while (1) {
+            std::this_thread::sleep_for(std::chrono::duration<double>(0.25));
+            if (sigint_flag) {
+                INFO("SIGINT received, terminating");
+                runner.stopAll();
+                close(listener);
+                unlink(SOCKPATH);
+                exit(0);
+            }
+        }
+    });
 
     INFO("Waiting for connections..");
     while (1) {

@@ -56,8 +56,18 @@ void GpioStream::onStart() {
 }
 
 void GpioStream::onStop() {
-    if (m_init_ok)
+    if (m_init_ok) {
         gpioTerminate();
+        gpioWrite(PIN_HEAD_HIGH, 0);
+        gpioWrite(PIN_HEAD_LOW, 0);
+        gpioWrite(PIN_MOUTH_HIGH, 0);
+        gpioWrite(PIN_MOUTH_LOW, 0);
+        gpioWrite(PIN_TAIL_HIGH, 0);
+        gpioWrite(PIN_TAIL_LOW, 0);
+        gpioPWM(PIN_HEAD_SPEED, 0);
+        gpioPWM(PIN_MOUTH_SPEED, 0);
+        gpioPWM(PIN_TAIL_SPEED, 0);
+    }
 }
 
 void GpioStream::frame(State state) {
@@ -110,7 +120,7 @@ void GpioStream::frame(State state) {
             // No chunks available, try again later.
             // Write a warning if we're in the PLAYING state
             if (state == State::PLAYING) {
-                WARNING("GPIO stream ran out of chunks while playing");
+                WARNING("GPIO stream ran out of chunks during playing");
             }
             return;
         }
@@ -122,7 +132,7 @@ void GpioStream::frame(State state) {
                 _applyGpioFrame(gpio_frame);
                 m_live_chunk = std::move(m_pending_chunks.front());
 
-                DEBUG("GPIO pulled frame for t=%lu", m_live_chunk.start_time);
+                //DEBUG("GPIO pulled frame for t=%lu", m_live_chunk.start_time);
                 return;
             }
 
@@ -151,8 +161,8 @@ void GpioStream::_applyGpioFrame(const GpioFrame& data) {
             m_low_mouth_frames++;
     }
 
-    gpioWrite(PIN_TAIL_HIGH, 1);
-    gpioWrite(PIN_TAIL_LOW, 0);
+    gpioWrite(PIN_HEAD_HIGH, 1);
+    gpioWrite(PIN_HEAD_LOW, 0);
 
     int mouth_speed = 0;
 
@@ -165,8 +175,7 @@ void GpioStream::_applyGpioFrame(const GpioFrame& data) {
     gpioPWM(PIN_HEAD_SPEED, data.lpf >> 8);
     gpioPWM(PIN_MOUTH_SPEED, mouth_speed);
 
-    DEBUG("Recv data hpf %d lpf %d", data.hpf, data.lpf);
-    DEBUG("Write mouth speed %d, tail speed %d", mouth_speed, data.lpf >> 8);
+    //DEBUG("Write mouth speed %d, tail speed %d", mouth_speed, data.lpf >> 8);
 }
 
 int GpioChunk::_extractGpioFrame(uint64_t now, const GpioStreamConfig& config,
@@ -222,5 +231,5 @@ void GpioStream::submit(AudioSample* lpf, AudioSample* hpf, int samples,
                                        vector<AudioSample>(hpf, hpf + samples),
                                        start_time));
 
-    DEBUG("GPIO accepted chunk %lu into pending queue", start_time);
+    //DEBUG("GPIO accepted chunk %lu into pending queue", start_time);
 }

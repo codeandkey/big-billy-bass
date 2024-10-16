@@ -11,7 +11,7 @@ namespace b3 {
     public:
         audioDriver() :
             m_audioDevice(nullptr),
-            m_audioParams(nullptr),
+            m_hardwareParams(nullptr),
             m_deviceOpen(false)
         {
             m_deviceName[0] = '\0';
@@ -28,7 +28,7 @@ namespace b3 {
          * @param channels # of audio channels
          * @return 0 on success, -1 on failure
          */
-        int openDevice(const char *deviceName, uint32_t sampleRate, uint8_t channels);
+        int openDevice(const char *deviceName, uint32_t sampleRate, uint8_t channels, uint64_t buffsize);
 
         /**
          * @brief
@@ -38,7 +38,7 @@ namespace b3 {
          * @param channels # of audio channels
          * @return 0 on success, -1 on failure
          */
-        inline int openDevice(uint32_t sampleRate, uint8_t channels) { return openDevice(DEFAULT_DEVICE, sampleRate, channels); }
+        inline int openDevice(uint32_t sampleRate, uint8_t channels, uint64_t buffsize) { return openDevice(DEFAULT_DEVICE, sampleRate, channels, buffsize); }
 
         /**
          * @brief
@@ -52,8 +52,9 @@ namespace b3 {
          *
          * @param sampleRate new sample rate
          * @param channels new # of audio channels
+         * @return negotiated frame size in bytes
          */
-        void updateAudioChannelData(int sampleRate, int channels);
+        int updateAudioChannelData(int sampleRate, int channels, int buffersize);
 
         /**
          * @brief
@@ -67,7 +68,7 @@ namespace b3 {
 
     private:
         snd_pcm_t *m_audioDevice;
-        snd_pcm_hw_params_t *m_audioParams;
+        snd_pcm_hw_params_t *m_hardwareParams;
 
         pthread_mutex_t m_audioMutex;
         bool m_deviceOpen;

@@ -171,7 +171,8 @@ namespace b3 {
         union {
             struct {
                 uint8_t m_fillBuffer : 1;
-                uint8_t __signal_padding : 7;
+                uint8_t m_stopCommand :1;
+                uint8_t __signal_padding : 6;
             };
             uint8_t m_signalFlags;
         };
@@ -187,5 +188,6 @@ namespace b3 {
 
         uint64_t m_chunkTimestamp;
         uint16_t m_chunkSize;
+        uint64_t m_chunkSizeMS;
     };
 };

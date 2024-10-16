@@ -16,6 +16,7 @@ target_link_libraries(b3
     avcodec
     asound
     avutil
+    swresample
 )
 
 # Uncomment to enable pigpio

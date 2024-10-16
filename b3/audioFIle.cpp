@@ -1,8 +1,8 @@
 #include "audioFile.h"
 
-#include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
-
+extern "C" {
+#include <libavutil/opt.h>
+}
 #include <cassert>
 
 #include "logger.h"
@@ -31,6 +31,7 @@ int b3::audioFile::openFile(const char *fileName)
         WARNING("Failed to open file: %s", fileName);
         goto openFileErrorCleanup;
     }
+    DEBUG("Opened %s", fileName);
 
     // get the stream info
     if (avformat_find_stream_info(m_formatContext, nullptr) < 0) {
@@ -43,6 +44,7 @@ int b3::audioFile::openFile(const char *fileName)
         WARNING("Failed to find audio stream");
         goto openFileErrorCleanup;
     }
+    DEBUG("...Found audio in stream %d", m_streamIndx);
     // get the codec context
     m_decoderContext = avcodec_alloc_context3(m_decoder);
 
@@ -57,6 +59,22 @@ int b3::audioFile::openFile(const char *fileName)
         //de-allocated decoder context
         goto openFileErrorCleanup;
     }
+    DEBUG("Setting up resampler");
+    DEBUG("...channel layout: %lu", m_decoderContext->channel_layout);
+    DEBUG("...sample rate: %d", m_decoderContext->sample_rate);
+    DEBUG("...input sample format: %d", m_decoderContext->sample_fmt);
+
+    // setup resampler to go from PCM floating point to PCM16
+    m_swResampler = swr_alloc();
+    av_opt_set_int(m_swResampler, "in_channel_layout", m_decoderContext->channel_layout, 0);
+    av_opt_set_int(m_swResampler, "in_sample_rate", m_decoderContext->sample_rate, 0);
+    av_opt_set_sample_fmt(m_swResampler, "in_sample_fmt", m_decoderContext->sample_fmt, 0);
+
+    av_opt_set_int(m_swResampler, "out_channel_layout", m_decoderContext->channel_layout, 0);
+    av_opt_set_int(m_swResampler, "out_sample_rate", m_decoderContext->sample_rate, 0);
+    av_opt_set_sample_fmt(m_swResampler, "out_sample_fmt", AV_SAMPLE_FMT_S16, 0);
+    swr_init(m_swResampler);
+
 
     strncpy(m_audioFileName, fileName, FILE_NAME_BUFFER_SIZE);
     m_frame = av_frame_alloc();
@@ -87,12 +105,17 @@ void b3::audioFile::closeFile()
             av_frame_free(&m_frame);
             m_frame = nullptr;
         }
+        if (m_swResampler) {
+            swr_free(&m_swResampler);
+            m_swResampler = nullptr;
+        }
         m_audioFileName[0] = '\0';
         m_streamIndx = -1;
         m_fileOpen = false;
     }
 
     // debug checks
+    assert(m_swResampler == nullptr);
     assert(m_decoderContext == nullptr);
     assert(m_formatContext == nullptr);
     assert(m_decoder == nullptr);
@@ -119,16 +142,13 @@ int b3::audioFile::readChunk(uint8_t *buffer, int readSize)
     int frameSize;
 
     while (totalRead < readSize) {
-        if (m_frameHead == 0 && _readFrame(m_frame) <= 0)
+        if (m_frameHead == 0 && (frameSize = _readFrame(m_frame) < 0))
             break;  // no more frames to read or bad frame
-
-        frameSize = _getFrameSize();
 
         int copySize = MIN(readSize - totalRead, frameSize - m_frameHead);
 
         // copy the frame data to the buffer
-        memcpy(buffer + totalRead, m_frame->data[0] + m_frameHead, copySize);
-
+        swr_convert(m_swResampler, &buffer, m_frame->nb_samples, (const uint8_t **)m_frame->data, m_frame->nb_samples);
         // update the read count
         totalRead += copySize;
         m_frameHead = (m_frameHead + copySize) % frameSize;
@@ -173,8 +193,10 @@ int b3::audioFile::_readFrame(AVFrame *frame)
 
     if (ret == AVERROR(EAGAIN)) {
         WARNING("Decoder needs more packets to produce a frame");
+        return 0;
     } else if (ret == AVERROR_EOF) {
         DEBUG("Decoder reached end of file");
+        return 0;
     } else if (ret < 0) {
         WARNING("Failed to receive frame from decoder");
         goto errorCleanup;
@@ -190,7 +212,7 @@ errorCleanup:
 }
 
 
-int b3::audioFile::calculateChunkSize() const
+int b3::audioFile::chunkSizeBytes() const
 {
     // calculates chunks size based on constants defined in signalProcessingDefaults.h and the file sample rate
     if (!m_fileOpen) {
@@ -198,6 +220,6 @@ int b3::audioFile::calculateChunkSize() const
         return 0;
     }
     assert(m_decoderContext != nullptr);
-
-    return (m_decoderContext->sample_rate * m_decoderContext->ch_layout.nb_channels * av_get_bytes_per_sample(m_decoderContext->sample_fmt) * CHUNK_SIZE_MS) / 1000;
+    /*     [frames/second] * [samples / frame] * [chunk size in s] * [bytes/ pcm16 frames] */
+    return getSampleRate() * getChannels() * CHUNK_SIZE_MS / 1000 * 2;
 }

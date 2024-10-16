@@ -4,6 +4,7 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libswresample/swresample.h>
 }
 
 #include <cassert>
@@ -16,6 +17,7 @@ namespace b3 {
         audioFile() :
             m_formatContext(nullptr),
             m_decoderContext(nullptr),
+            m_swResampler(nullptr),
             m_decoder(nullptr),
             m_streamIndx(-1),
             m_frame(nullptr),
@@ -29,6 +31,7 @@ namespace b3 {
         audioFile(char *fileName) :
             m_formatContext(nullptr),
             m_decoderContext(nullptr),
+            m_swResampler(nullptr),
             m_decoder(nullptr),
             m_streamIndx(-1),
             m_frameHead(0),
@@ -63,7 +66,7 @@ namespace b3 {
          */
         int readChunk(uint8_t *buffer, int readSize);
 
-        int calculateChunkSize() const;
+        int chunkSizeBytes() const;
 
         inline int getChannels() const
         {
@@ -79,6 +82,14 @@ namespace b3 {
                 return 0;
             assert(m_decoderContext != nullptr);
             return m_decoderContext->bit_rate;
+        }
+
+        inline int getSampleRate() const
+        {
+            if (!m_fileOpen)
+                return 0;
+            assert(m_decoderContext != nullptr);
+            return m_decoderContext->sample_rate;
         }
 
     private:
@@ -108,6 +119,7 @@ namespace b3 {
 
         AVFormatContext *m_formatContext;
         AVCodecContext *m_decoderContext;
+        SwrContext *m_swResampler;
         const AVCodec *m_decoder;
         AVFrame *m_frame;   // used for reading frames, most recent frame read is stored here
         int8_t m_streamIndx;
