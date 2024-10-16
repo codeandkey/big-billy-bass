@@ -7,6 +7,7 @@ extern "C" {
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <signal.h>
 }
 
 #include "gpioStream.h"
@@ -15,10 +16,19 @@ extern "C" {
 #include "signalProcessing.h"
 #include "state.h"
 #include "task.h"
+#include "audioDriver.h"
+#include "audioFile.h"
 
 constexpr const char* SOCKPATH = "/tmp/b3.sock";
 
 using namespace b3;
+
+static std::atomic_bool sigint_flag;
+
+static void sigint_handler(int _sig) {
+    INFO("In SIGINT handler");
+    sigint_flag.store(true);
+}
 
 class EchoTask : public Task {
     public:
@@ -42,19 +52,48 @@ class EchoTask : public Task {
 };
 
 int main(int argc, char** argv) {
-    Runner runner;
+    struct sigaction sa = {0};
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sa.sa_handler = sigint_handler;
+    sigaction(SIGINT, &sa, NULL);
 
+    Runner runner;
+    float lpf;
+    float hpf;
+    char fileName[255] = "test.mp3";
     for (int i = 0; i < argc; ++i) {
         if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
-            _logger::g_log_verbose = true;
+            SET_VERBOSE_LOGGING(true);
             INFO("Verbose logging enabled");
         }
+        if (std::string(argv[i]) == "-f" && i + 1 < argc) {
+            strncpy(fileName, argv[i + 1], sizeof(fileName));
+            INFO("loading sound file: %s", argv[i + 1]);
+            i++;
+        }
+        if (std::string(argv[i]) == "-lpf" && i + 1 < argc) {
+            lpf = std::stod(argv[i+1]);
+            INFO("LPF setting: %s", argv[i + 1]);
+            i++;
+        }
+        if (std::string(argv[i]) == "-hpf" && i + 1 < argc) {
+            lpf = std::stod(argv[i + 1]);
+            INFO("HPF setting: %s", argv[i + 1]);
+            i++;
+        }
     }
+
+    audioDriver driver = audioDriver();
+    audioFile file = audioFile(fileName);
 
     runner.addTask<EchoTask>();
 
 #ifndef GPIO_TEST
-    audioProcessor* processor = runner.addTask<audioProcessor>();
+    signalProcessor *processor = runner.addTask<signalProcessor>();
+    processor->setAudioDriver(&driver);
+    processor->setLPF(lpf);
+    processor->setHPF(hpf);
 #else
 #warning GPIO_TEST defined, not loading audio processor
     WARNING("GPIO_TEST defined, not loading audio processor");
@@ -66,6 +105,9 @@ int main(int argc, char** argv) {
     runner.spawn();
 
     INFO("Starting play");
+                                
+    processor->setFile(&file);
+
     runner.setState(State::PLAYING);
 
     auto handleconn = [&](int sock) {
@@ -99,16 +141,11 @@ int main(int argc, char** argv) {
 
                 std::string path = std::string(buf + 5);
                 INFO("Loading file: %s", path.c_str());
-#ifndef GPIO_TEST
-                processor->loadFile(path.c_str());
-#endif // GPIO_TEST
             }
         }
         close(sock);
         INFO("Terminated session");
     };
-
-    unlink(SOCKPATH);
 
     int listener = socket(AF_UNIX, SOCK_STREAM, 0);
     if (listener < 0) {
@@ -121,6 +158,11 @@ int main(int argc, char** argv) {
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, SOCKPATH, sizeof(addr.sun_path) - 1);
 
+    if (unlink(SOCKPATH) < 0) {
+        perror("unlink");
+        ERROR("Failed to unlink socket");
+    }
+
     if (bind(listener, (sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind");
         ERROR("Failed to bind socket");
@@ -132,6 +174,20 @@ int main(int argc, char** argv) {
         ERROR("Failed to listen on socket");
         return 1;
     }
+
+    // Activate SIGINT watchdog
+    std::thread sigint_watchdog = std::thread([&]() {
+        while (1) {
+            std::this_thread::sleep_for(std::chrono::duration<double>(0.25));
+            if (sigint_flag) {
+                INFO("SIGINT received, terminating");
+                runner.stopAll();
+                close(listener);
+                unlink(SOCKPATH);
+                exit(0);
+            }
+        }
+    });
 
     INFO("Waiting for connections..");
     while (1) {

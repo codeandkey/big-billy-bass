@@ -5,15 +5,25 @@ add_executable(b3
     signalProcessing.cpp
     logger.cpp
     timeManager.cpp
+    biQuadFilter.cpp
+    audioDriver.cpp
+    audioFile.cpp
 )
 
-target_link_libraries(b3 avformat)
+# needed for ffmpeg libs
+target_link_libraries(b3 
+    avformat
+    avcodec
+    asound
+    avutil
+    swresample
+)
 
 # Uncomment to enable pigpio
-#set (PIGPIO_ENABLE 1)
+set (PIGPIO_ENABLE 1)
 
 # Uncomment to enable GPIO test
-#set (GPIO_TEST 1)
+# set (GPIO_TEST 1)
 
 if (PIGPIO_ENABLE)
     target_compile_definitions(b3 PUBLIC ENABLE_PIGPIO)

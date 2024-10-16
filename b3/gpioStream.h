@@ -14,17 +14,17 @@ constexpr int PIN_HEAD_HIGH = 22;
 constexpr int PIN_HEAD_LOW = 23;
 constexpr int PIN_TAIL_HIGH = 23;
 constexpr int PIN_TAIL_LOW = 22;
-constexpr int PIN_MOUTH_HIGH = 24;
+constexpr int PIN_MOUTH_HIGH = 9;
 constexpr int PIN_MOUTH_LOW = 25;
 
 // Modulating pins for motor speed
-constexpr int PIN_HEAD_SPEED = 12;
-constexpr int PIN_TAIL_SPEED = 12;
-constexpr int PIN_MOUTH_SPEED = 13;
+constexpr int PIN_HEAD_SPEED = 0;
+constexpr int PIN_TAIL_SPEED = 0;
+constexpr int PIN_MOUTH_SPEED = 1;
 
 constexpr int AUDIO_SAMPLE_RATE = 44100;  // default audio hz
 constexpr int GPIO_WINDOW = 250;          // GPIO sample window in ms
-constexpr float GPIO_GAIN = 1.0f;         // default GPIO gain
+constexpr float GPIO_GAIN = 2.0f;         // default GPIO gain
 constexpr float GPIO_THRESHOLD = 0.5f;    // default GPIO threshold
 
 typedef int16_t AudioSample;
@@ -170,6 +170,9 @@ class GpioStream : public Task {
     // Current GPIO chunk
     GpioChunk m_live_chunk;
 
+    // Consecutive low mouth frames
+    int m_low_mouth_frames;
+
     // Pending chunk queue + sync
     std::queue<GpioChunk> m_pending_chunks;
     std::mutex m_pending_chunks_mutex;
@@ -177,6 +180,8 @@ class GpioStream : public Task {
     // Live configuration + sync
     std::mutex m_config_mutex;
     GpioStreamConfig m_config;
+
+    bool m_init_ok;
 };
 
 }  // namespace b3
