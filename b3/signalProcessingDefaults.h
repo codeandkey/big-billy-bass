@@ -1,8 +1,8 @@
 #pragma once
 #include <stdint.h>
 
-constexpr float CHUNK_SIZE_MS = 64.0f; //  ms chunks
-constexpr float BUFFER_LENGTH_S = 128.0f; // 128 ms buffer
+constexpr float CHUNK_SIZE_MS = 100.; //  ms chunks
+constexpr float BUFFER_LENGTH_S = CHUNK_SIZE_MS * 3;
 
 constexpr uint8_t CHUNK_COUNT = BUFFER_LENGTH_S / CHUNK_SIZE_MS;
 constexpr uint8_t FILE_NAME_BUFFER_SIZE = 255;

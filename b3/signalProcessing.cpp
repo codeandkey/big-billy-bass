@@ -9,10 +9,7 @@
 #include "logger.h"
 
 
-#define U8_TO_U16_LE(a, b) ((uint16_t)(((uint16_t)a << 8) | b))
-#define PCM_STEREO_TO_MONO(buffer, ndx)  (\
-    (U8_TO_U16_LE(buffer[ndx], buffer[ndx + 1]) +  \
-    U8_TO_U16_LE(buffer[ndx + 2], buffer[ndx + 3])) / 2) 
+#define PCM_STEREO_TO_MONO(buffer, ndx)  (buffer[ndx] + buffer[ndx+1])/2
 
 #define MIN(a,b) ((a < b) ? (a) : (b))
 
@@ -31,7 +28,7 @@ void signalProcessor::frame(State state)
     if (m_activeState == State::PLAYING && !m_stopCommand) {
 
         uint64_t dt = usToNextChunk();
-        usleep(MIN(dt, CHUNK_SIZE_MS * 1000 * 9 / 10));
+        usleep(MIN(dt, m_chunkSize * 1000 * 9 / 10));
 
         if (m_fillBuffer) {
             m_fillBuffer = false;
@@ -43,7 +40,7 @@ void signalProcessor::frame(State state)
         if (dt == 0)
             DEBUG("Possible chunk underrun likely due to process timing");
     }
-    
+
 }
 
 
@@ -79,9 +76,9 @@ void signalProcessor::onTransition(State from, State to)
             m_chunkSize);
 
         // set
-        m_chunkSizeMS = m_chunkSize * 1000 / 4 / m_audioFile->getSampleRate();
+        m_chunkSizeUs = m_chunkSize * 1e6 / 4 / m_audioFile->getSampleRate();
         m_chunkTimestamp = timeManager::getUsSinceEpoch();
-        
+
         // set flags
         m_stopCommand = 0;
         m_fillBuffer = true;
@@ -159,33 +156,37 @@ int signalProcessor::_processChunk()
     assert(m_lpf != nullptr);
     assert(m_hpf != nullptr);
 
-    int bytes2pcm16 = m_audioFile->getChannels() * sizeof(int16_t) / sizeof(uint8_t);
+    int bytesPerSample = sizeof(uint16_t) / sizeof(uint8_t);
+    int channels = m_audioFile->getChannels();
+    int sampleCount = m_chunkSize / bytesPerSample / m_audioFile->getChannels();
 
-    uint8_t pcm16Buff[m_chunkSize];
-    int16_t lpfSignal[m_chunkSize / bytes2pcm16];
-    int16_t hpfSignal[m_chunkSize / bytes2pcm16];
+    int16_t pcm16Buff[sampleCount * channels];  // this has multiple channels
+    int16_t lpfSignal[sampleCount];             // these are mono
+    int16_t hpfSignal[sampleCount];             // these are mono
     // read PCM16 data from the audio file
-    int bytesRead = m_audioFile->readChunk(pcm16Buff, m_chunkSize);
+    int bytesRead = m_audioFile->readChunk((uint8_t *)pcm16Buff, m_chunkSize);
 
     // check for eof
-    if (bytesRead <= 0) {
+    if (bytesRead < m_chunkSize) {
         INFO("EOF Detected");
         m_stopCommand = 1;
         return 0;
     }
 
-    for (int i = 0; i < bytesRead; i += 4) {
+    for (int i = 0; i < (sampleCount * channels) - 1; i += channels) {
         // convert stereo to mono, apply filters
-        lpfSignal[i / 4] = m_lpf->update((float)PCM_STEREO_TO_MONO(pcm16Buff, i));
-        hpfSignal[i / 4] = m_hpf->update((float)PCM_STEREO_TO_MONO(pcm16Buff, i));
+        lpfSignal[i / channels] = m_lpf->update((float)PCM_STEREO_TO_MONO(pcm16Buff, i));
+        hpfSignal[i / channels] = m_hpf->update((float)PCM_STEREO_TO_MONO(pcm16Buff, i));
     }
 
     // GPIO API call
-    GpioStream::get().submit(lpfSignal, hpfSignal, m_chunkSize / bytes2pcm16, m_chunkTimestamp);
-    m_chunkTimestamp += m_chunkSizeMS;
+#ifndef DISABLE_GPIO
+    GpioStream::get().submit(lpfSignal, hpfSignal, sampleCount, m_chunkTimestamp);
+    m_chunkTimestamp += m_chunkSizeUs;
+#endif
 
     // write audio data to the audio driver
-    if (m_alsaDriver->writeAudioData(pcm16Buff, bytesRead / bytes2pcm16)) {
+    if (m_alsaDriver->writeAudioData((uint8_t *)pcm16Buff, sampleCount)) {
         // do something
     }
 

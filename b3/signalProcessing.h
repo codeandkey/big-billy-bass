@@ -188,6 +188,6 @@ namespace b3 {
 
         uint64_t m_chunkTimestamp;
         uint16_t m_chunkSize;
-        uint64_t m_chunkSizeMS;
+        uint64_t m_chunkSizeUs;
     };
 };

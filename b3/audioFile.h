@@ -1,6 +1,7 @@
 #pragma once
 
 #include <pthread.h>
+#include <vector>
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -12,17 +13,20 @@ extern "C" {
 #include "signalProcessingDefaults.h"
 
 namespace b3 {
+    constexpr AVSampleFormat DEFAULT_DECODER_FORMAT = AVSampleFormat::AV_SAMPLE_FMT_S16;
+
     class audioFile {
     public:
         audioFile() :
             m_formatContext(nullptr),
             m_decoderContext(nullptr),
-            m_swResampler(nullptr),
+            m_swrContext(nullptr),
             m_decoder(nullptr),
             m_streamIndx(-1),
             m_frame(nullptr),
-            m_frameHead(0),
-            m_fileOpen(false)
+            m_frameSampleNdx(0),
+            m_fileOpen(false),
+            m_packetSent(false)
         {
             m_audioFileName[0] = '\0';
             pthread_mutex_init(&m_fileMutex, nullptr);
@@ -31,11 +35,13 @@ namespace b3 {
         audioFile(char *fileName) :
             m_formatContext(nullptr),
             m_decoderContext(nullptr),
-            m_swResampler(nullptr),
+            m_swrContext(nullptr),
             m_decoder(nullptr),
             m_streamIndx(-1),
-            m_frameHead(0),
-            m_fileOpen(false)
+            m_frame(nullptr),
+            m_frameSampleNdx(0),
+            m_fileOpen(false),
+            m_packetSent(false)
         {
             m_audioFileName[0] = '\0';
             pthread_mutex_init(&m_fileMutex, nullptr);
@@ -105,6 +111,14 @@ namespace b3 {
             return av_samples_get_buffer_size(NULL, m_decoderContext->ch_layout.nb_channels, m_frame->nb_samples, m_decoderContext->sample_fmt, 1);
         }
 
+        inline int _getFrameSize(AVFrame* frame) const
+        {
+            if (frame == nullptr)
+                return 0;
+            assert(m_decoderContext != nullptr);
+            return av_samples_get_buffer_size(NULL, m_decoderContext->ch_layout.nb_channels, frame->nb_samples, m_decoderContext->sample_fmt, 1);
+        }
+
         /**
          * @brief reads the next frame from the audio file. Function is NOT thread safe.
          *
@@ -116,19 +130,18 @@ namespace b3 {
         int _readFrame(AVFrame *frame);
 
 
-
         AVFormatContext *m_formatContext;
         AVCodecContext *m_decoderContext;
-        SwrContext *m_swResampler;
-        const AVCodec *m_decoder;
+        SwrContext *m_swrContext;
+        AVCodec *m_decoder;
         AVFrame *m_frame;   // used for reading frames, most recent frame read is stored here
         int8_t m_streamIndx;
 
         char m_audioFileName[FILE_NAME_BUFFER_SIZE];
 
-        int m_frameHead;
+        int m_frameSampleNdx;
         bool m_fileOpen;
-
+        bool m_packetSent;
 
         pthread_mutex_t m_fileMutex;
     }; // class audioFile

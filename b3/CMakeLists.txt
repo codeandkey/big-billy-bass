@@ -22,6 +22,9 @@ target_link_libraries(b3
 # Uncomment to enable pigpio
 set (PIGPIO_ENABLE 1)
 
+# Uncomment to disable pigpio write and warnings
+# add_compile_definitions(DISABLE_GPIO)
+
 # Uncomment to enable GPIO test
 # set (GPIO_TEST 1)
 
