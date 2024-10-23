@@ -7,9 +7,20 @@ using namespace b3;
 
 float biQuadFilter::update(float sample)
 {
-    m_x.push(sample);
-    float y = b[0] * m_x[2] + b[1] * m_x[1] + b[2] * m_x[0] - a[1] * m_y[1] - a[2] * m_y[0];
-    m_y.push(y);
+    m_x.push_front(sample);
+    while (m_x.size() > FF)
+        m_x.pop_back();
+
+
+    float y = 0;
+    for (int i = 0; i < m_x.size(); i++)
+        y += m_x[i] * b[i];
+    for (int i = 0;i < m_y.size(); i++)
+        y -= m_y[i] * a[i];
+
+    m_y.push_front(y);
+    while (m_y.size() > FB)
+        m_y.pop_back();
     return y;
 }
 
@@ -52,7 +63,7 @@ void biQuadFilter::updateCoeffs()
     b[0] = b0 / a0;
     b[1] = b1 / a0;
     b[2] = b2 / a0;
-    a[1] = a1 / a0;
-    a[2] = a2 / a0;
+    a[0] = a1 / a0;
+    a[1] = a2 / a0;
 
 }

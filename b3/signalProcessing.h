@@ -25,8 +25,10 @@ namespace b3 {
             m_hpf(nullptr),
             m_alsaDriver(nullptr),
             m_chunkTimestamp(timeManager::getUsSinceEpoch())
-        {}
-        
+        {
+            m_fileClosed = false;
+        }
+
         ~signalProcessor();
 
         /**
@@ -78,18 +80,18 @@ namespace b3 {
          *
          * @warning If the required conditions for a state transition are not met, an error message will be logged and the transition will not occur.
          *
-         * 
+         *
          */
         virtual void onTransition(State from, State to) override;
 
 
         // getters / setters
-        
+
         /**
-         * @brief 
-         * Sets the audio driver for the audio processor. The audio processor does not own the driver. 
+         * @brief
+         * Sets the audio driver for the audio processor. The audio processor does not own the driver.
          *
-         * @param driver 
+         * @param driver
          */
         void setAudioDriver(audioDriver *driver);
 
@@ -171,7 +173,8 @@ namespace b3 {
         union {
             struct {
                 uint8_t m_fillBuffer : 1;
-                uint8_t m_stopCommand :1;
+                uint8_t m_stopCommand : 1;
+                uint8_t m_fileClosed : 1;
                 uint8_t __signal_padding : 6;
             };
             uint8_t m_signalFlags;
@@ -183,11 +186,13 @@ namespace b3 {
 
         biQuadFilter *m_lpf;
         biQuadFilter *m_hpf;
-        
+
         audioDriver *m_alsaDriver;
 
         uint64_t m_chunkTimestamp;
         uint16_t m_chunkSize;
         uint64_t m_chunkSizeUs;
+
+        FILE *m_signalDebugFile;
     };
 };

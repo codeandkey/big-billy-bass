@@ -41,6 +41,13 @@ void signalProcessor::frame(State state)
             DEBUG("Possible chunk underrun likely due to process timing");
     }
 
+    if (m_stopCommand && m_fileClosed){
+        fclose(m_signalDebugFile);
+        m_fileClosed = false;
+    }
+
+
+
 }
 
 
@@ -82,6 +89,8 @@ void signalProcessor::onTransition(State from, State to)
         // set flags
         m_stopCommand = 0;
         m_fillBuffer = true;
+
+        m_signalDebugFile = fopen("debugLpf.bin", "wb");
         break;
     case State::PAUSED:
         if (m_activeState == State::STOPPED) {
@@ -184,11 +193,14 @@ int signalProcessor::_processChunk()
     GpioStream::get().submit(lpfSignal, hpfSignal, sampleCount, m_chunkTimestamp);
     m_chunkTimestamp += m_chunkSizeUs;
 #endif
+    usleep(100000);
 
     // write audio data to the audio driver
     if (m_alsaDriver->writeAudioData((uint8_t *)pcm16Buff, sampleCount)) {
         // do something
     }
+
+    fwrite(lpfSignal, sizeof(lpfSignal[0]) * sampleCount, 1, m_signalDebugFile);
 
     return 0;
 }
