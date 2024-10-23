@@ -10,22 +10,24 @@
 namespace b3 {
 
 // Directional control pins, direction reversed by setting LOW pins to HIGH and vice versa
-constexpr int PIN_HEAD_HIGH = 22;
-constexpr int PIN_HEAD_LOW = 23;
-constexpr int PIN_TAIL_HIGH = 23;
-constexpr int PIN_TAIL_LOW = 22;
-constexpr int PIN_MOUTH_HIGH = 9;
-constexpr int PIN_MOUTH_LOW = 25;
+constexpr int PIN_HEAD_HIGH = 20;
+constexpr int PIN_HEAD_LOW = 21;
+constexpr int PIN_TAIL_HIGH = 21;
+constexpr int PIN_TAIL_LOW = 20;
+constexpr int PIN_MOUTH_HIGH = 6;
+constexpr int PIN_MOUTH_LOW = 26;
 
 // Modulating pins for motor speed
-constexpr int PIN_HEAD_SPEED = 0;
-constexpr int PIN_TAIL_SPEED = 0;
-constexpr int PIN_MOUTH_SPEED = 1;
+constexpr int PIN_BODY_SPEED = 12;
+constexpr int PIN_MOUTH_SPEED = 13;
 
 constexpr int AUDIO_SAMPLE_RATE = 44100;  // default audio hz
 constexpr int GPIO_WINDOW = 250;          // GPIO sample window in ms
-constexpr float GPIO_GAIN = 2.0f;         // default GPIO gain
-constexpr float GPIO_THRESHOLD = 0.5f;    // default GPIO threshold
+constexpr float GPIO_GAIN = 5.0f;         // default GPIO gain
+constexpr float GPIO_THRESHOLD = 0.2f;    // default GPIO threshold
+
+constexpr uint8_t MOUTH_SPEED = 255;
+constexpr uint8_t BODY_SPEED = 255;
 
 typedef int16_t AudioSample;
 
@@ -97,18 +99,21 @@ struct GpioFrame {
 };
 
 struct GpioChunk {
-    GpioChunk(std::vector<AudioSample>&& lpf, std::vector<AudioSample>&& hpf,
-              uint64_t start_time)
-        : lpf(std::move(lpf)), hpf(std::move(hpf)), start_time(start_time) {}
+    GpioChunk(std::vector<AudioSample>&& lpf, std::vector<AudioSample>&& hpf, int rate)
+        : lpf(std::move(lpf)), hpf(std::move(hpf)), rate(rate) {}
 
-    GpioChunk() : start_time(0) {}
+    GpioChunk() : rate(1) {}
 
     // Audio samples
     std::vector<AudioSample> lpf;
     std::vector<AudioSample> hpf;
 
-    // Absolute start time of the chunk
-    uint64_t start_time;
+    // Sample rate in hz
+    int rate;
+
+    inline uint64_t lengthUs() {
+        return (lpf.size() * 1000000) / rate;
+    }
 
     /**
      * Extract a GPIO frame from this audio chunk, if possible. Partial frames
@@ -169,9 +174,8 @@ class GpioStream : public Task {
 
     // Current GPIO chunk
     GpioChunk m_live_chunk;
-
-    // Consecutive low mouth frames
-    int m_low_mouth_frames;
+    bool m_stream_end_warning;
+    uint64_t m_live_chunk_start;
 
     // Pending chunk queue + sync
     std::queue<GpioChunk> m_pending_chunks;

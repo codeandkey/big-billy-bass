@@ -11,6 +11,7 @@ extern "C" {
 }
 
 #include "gpioStream.h"
+#include "sigint.h"
 #include "logger.h"
 #include "runner.h"
 #include "signalProcessing.h"
@@ -25,7 +26,7 @@ using namespace b3;
 
 static std::atomic_bool sigint_flag;
 
-static void sigint_handler(int _sig) {
+void sigint_handler(int _sig) {
     INFO("In SIGINT handler");
     sigint_flag.store(true);
 }
@@ -52,15 +53,9 @@ class EchoTask : public Task {
 };
 
 int main(int argc, char** argv) {
-    struct sigaction sa = {0};
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sa.sa_handler = sigint_handler;
-    sigaction(SIGINT, &sa, NULL);
-
     Runner runner;
-    float lpf;
-    float hpf;
+    float lpf = LPF_CUTOFF_DEFAULT;
+    float hpf = HPF_CUTOFF_DEFAULT;
     char fileName[255] = "test.mp3";
     for (int i = 0; i < argc; ++i) {
         if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
@@ -195,7 +190,7 @@ int main(int argc, char** argv) {
         if (sock < 0) {
             perror("accept");
             ERROR("Failed to accept connection");
-            return 1;
+            break;
         }
 
         INFO("Accepted connection");

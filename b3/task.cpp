@@ -11,11 +11,9 @@ void Task::stop() {
 	m_should_stop = true;
 	assert(job->joinable());
 
-	if (job) {
-		job->join();
-		delete job;
-		job = nullptr;
-	}
+    job->join();
+    delete job;
+    job = nullptr;
 }
 
 void Task::setState(State new_state) {
