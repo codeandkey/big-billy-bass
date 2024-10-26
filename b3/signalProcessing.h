@@ -15,6 +15,19 @@
 #include "audioDriver.h"
 
 namespace b3 {
+    namespace SPD = signalProcessingDefaults;
+
+    struct filterSettings {
+
+        filterSettings() :
+            lpfCutoff(SPD::LPF_CUTOFF_DEFAULT),
+            hpfCutoff(SPD::HPF_CUTOFF_DEFAULT)
+        {}
+
+        float lpfCutoff;        //low pass filter cutoff (Hz)
+        float hpfCutoff;        //high pass filter cutoff (Hz)
+    };
+
     class signalProcessor : public Task {
     public:
         signalProcessor() :
@@ -104,6 +117,7 @@ namespace b3 {
          */
         void setFile(audioFile *F);
 
+
         /**
          * @brief
          * Unloads the current audio file
@@ -160,6 +174,7 @@ namespace b3 {
          */
         int _processChunk();
 
+        void _negotiateChunkSize();  
         // status fields
         union {
             struct {

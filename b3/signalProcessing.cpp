@@ -28,11 +28,11 @@ void signalProcessor::frame(State state)
     if (m_activeState == State::PLAYING && !m_stopCommand) {
 
         uint64_t dt = usToNextChunk();
-        usleep(MIN(dt, m_chunkSize * 1000 * 9 / 10));
+        usleep(MIN(dt, m_chunkSizeUs * 9 / 10));
 
         if (m_fillBuffer) {
             m_fillBuffer = false;
-            for (int i = 0; i < CHUNK_COUNT - 1; i++)
+            for (int i = 0; i < b3::SPD::CHUNK_COUNT - 1; i++)
                 _processChunk();
         }
         _processChunk();
@@ -41,13 +41,10 @@ void signalProcessor::frame(State state)
             DEBUG("Possible chunk underrun likely due to process timing");
     }
 
-    if (m_stopCommand && m_fileClosed){
+    if (m_stopCommand && m_fileClosed) {
         fclose(m_signalDebugFile);
         m_fileClosed = false;
     }
-
-
-
 }
 
 
@@ -59,8 +56,6 @@ void signalProcessor::onTransition(State from, State to)
         return;
 
     assert(m_activeState == from);
-
-    int pcm16BitRate;
 
     switch (to) {
     case State::PLAYING:
@@ -75,15 +70,6 @@ void signalProcessor::onTransition(State from, State to)
         }
         assert(m_audioFile);
 
-        // need to calculate new bitrate since we are converting to pcm16 data
-        pcm16BitRate = m_audioFile->getSampleRate() * m_audioFile->getChannels() * 8 * 2;
-        // chunk size is re-negotiated here
-        m_chunkSize = m_alsaDriver->updateAudioChannelData(pcm16BitRate,
-            m_audioFile->getChannels(),
-            m_chunkSize);
-
-        // set
-        m_chunkSizeUs = m_chunkSize * 1e6 / 4 / m_audioFile->getSampleRate();
         m_chunkTimestamp = timeManager::getUsSinceEpoch();
 
         // set flags
@@ -91,6 +77,8 @@ void signalProcessor::onTransition(State from, State to)
         m_fillBuffer = true;
 
         m_signalDebugFile = fopen("debugLpf.bin", "wb");
+        if (!m_signalDebugFile)
+            WARNING("failed to open " "debugLpf.bin" ": %s", strerror(errno));
         break;
     case State::PAUSED:
         if (m_activeState == State::STOPPED) {
@@ -136,15 +124,34 @@ void signalProcessor::setFile(audioFile *F)
         WARNING("File Already Loaded, Unloading previous audio file");
         unLoadFile();
     }
+    assert(F->getSampleRate() == SPD::DEFAULT_SAMPLE_RATE);
+
     m_audioFile = F;
     m_fileLoaded = true;
-    m_chunkSize = m_audioFile->chunkSizeBytes();
+
+    _negotiateChunkSize();
 
     // create filters
     m_lpf = new biQuadFilter(m_audioFile->getSampleRate(), m_filterSettings.lpfCutoff, Q, GAIN, filterType::LPF_type);
     m_hpf = new biQuadFilter(m_audioFile->getSampleRate(), m_filterSettings.hpfCutoff, Q, GAIN, filterType::HPF_type);
 }
 
+void signalProcessor::_negotiateChunkSize()
+{
+    // this is the desired chunk size based on the audio file's settings
+    m_chunkSize = m_audioFile->chunkSizeBytes(signalProcessingDefaults::CHUNK_SIZE_MS);
+    // see if we can set the alsa drivers to the same settings
+    int audioDriverChunkSize = m_alsaDriver->updateAudioChannelData(m_audioFile->getSampleRate(),
+        m_audioFile->getChannels(),
+        m_chunkSize);
+    if (m_chunkSize != audioDriverChunkSize) {
+        ERROR("Processing chunks size of %d bytes does not match with audio driver which configured to %d bytes", m_chunkSize, audioDriverChunkSize);
+        m_chunkSize = 0;
+    }
+
+    if (m_audioFile->getChannels() > 0)
+        m_chunkSizeUs = m_chunkSize / (SPD::BYTES_PER_SAMPLE * m_audioFile->getChannels());
+}
 
 uint64_t signalProcessor::usToNextChunk()
 {
@@ -165,9 +172,8 @@ int signalProcessor::_processChunk()
     assert(m_lpf != nullptr);
     assert(m_hpf != nullptr);
 
-    int bytesPerSample = sizeof(uint16_t) / sizeof(uint8_t);
     int channels = m_audioFile->getChannels();
-    int sampleCount = m_chunkSize / bytesPerSample / m_audioFile->getChannels();
+    int sampleCount = m_chunkSize / SPD::BYTES_PER_SAMPLE / m_audioFile->getChannels();
 
     int16_t pcm16Buff[sampleCount * channels];  // this has multiple channels
     int16_t lpfSignal[sampleCount];             // these are mono
@@ -179,28 +185,31 @@ int signalProcessor::_processChunk()
     if (bytesRead < m_chunkSize) {
         INFO("EOF Detected");
         m_stopCommand = 1;
-        return 0;
+        if (bytesRead <= 0)
+            return 0;
     }
+    int samplesRead = bytesRead / SPD::BYTES_PER_SAMPLE / channels;
 
-    for (int i = 0; i < (sampleCount * channels) - 1; i += channels) {
-        // convert stereo to mono, apply filters
+    for (int i = 0; i < (samplesRead * 2) - 1; i += channels) {
+// convert stereo to mono, apply filters
         lpfSignal[i / channels] = m_lpf->update((float)PCM_STEREO_TO_MONO(pcm16Buff, i));
         hpfSignal[i / channels] = m_hpf->update((float)PCM_STEREO_TO_MONO(pcm16Buff, i));
     }
 
     // GPIO API call
 #ifndef DISABLE_GPIO
-    GpioStream::get().submit(lpfSignal, hpfSignal, sampleCount, m_chunkTimestamp);
+    GpioStream::get().submit(lpfSignal, hpfSignal, samplesRead, m_chunkTimestamp);
     m_chunkTimestamp += m_chunkSizeUs;
 #endif
-    usleep(100000);
+    // usleep(100000);
 
     // write audio data to the audio driver
-    if (m_alsaDriver->writeAudioData((uint8_t *)pcm16Buff, sampleCount)) {
+    if (m_alsaDriver->writeAudioData((uint8_t *)pcm16Buff, samplesRead)) {
         // do something
     }
 
-    fwrite(lpfSignal, sizeof(lpfSignal[0]) * sampleCount, 1, m_signalDebugFile);
+    if (m_signalDebugFile)
+        fwrite(lpfSignal, sizeof(lpfSignal[0]), samplesRead, m_signalDebugFile);
 
     return 0;
 }

@@ -7,7 +7,7 @@
 #include "signalProcessingDefaults.h"
 
 using namespace b3;
-
+using namespace audioDriverDefaults;
 
 void b3::audioDriver::closeDevice()
 {
@@ -57,7 +57,7 @@ int b3::audioDriver::writeAudioData(uint8_t *data, int frameCount)
     return 0;
 }
 
-int b3::audioDriver::openDevice(const char *deviceName, uint32_t bitrate, uint8_t channels, uint64_t buffSize)
+int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uint8_t channels, uint64_t buffSize)
 {
     /**
      * Clearing up some nomenclature here becuase I got very confused and it lead to some bugs
@@ -71,7 +71,7 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t bitrate, uint8_
 
 
     if (m_deviceOpen) {
-        WARNING("Audio device already open");
+        WARNING("Audio device already open, close device before opening a new one");
         return -1;
     }
     pthread_mutex_lock(&m_audioMutex);
@@ -91,25 +91,23 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t bitrate, uint8_
     // set stream parameters
     if ((err = snd_pcm_hw_params_set_access(m_audioDevice, m_hardwareParams, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0)
         goto badInitCleanup;
-    if ((err = snd_pcm_hw_params_set_format(m_audioDevice, m_hardwareParams, SND_PCM_FORMAT_S16_LE)) < 0)
+    if ((err = snd_pcm_hw_params_set_format(m_audioDevice, m_hardwareParams, DEFAULT_OUTPUT_FORAMT)) < 0)
         goto badInitCleanup;
     if ((err = snd_pcm_hw_params_set_channels(m_audioDevice, m_hardwareParams, channels)) < 0)
         goto badInitCleanup;
 
-    frameRate = bitrate / channels / 8 / 2;
+    frameRate = sampleRate;
     if ((err = snd_pcm_hw_params_set_rate_near(m_audioDevice, m_hardwareParams, &frameRate, 0)) < 0)
         goto badInitCleanup;
     if ((err = snd_pcm_hw_params_set_period_size_near(m_audioDevice, m_hardwareParams, &buffSize, 0)) < 0)
         goto badInitCleanup;
     // write parameters to driver
     if ((err = snd_pcm_hw_params(m_audioDevice, m_hardwareParams)) < 0) {
-        ERROR("Failed to set hardware parameters");
         goto badInitCleanup;
     }
     snd_pcm_hw_params_free(m_hardwareParams);
 
     if ((err = snd_pcm_prepare(m_audioDevice)) < 0) {
-        ERROR("Failed to prepare audio device");
         goto badInitCleanup;
     }
 
@@ -120,8 +118,8 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t bitrate, uint8_
     pthread_mutex_unlock(&m_audioMutex);
 
     DEBUG("Opened audio device %s", snd_pcm_name(m_audioDevice));
-    DEBUG("--%d Hz (%d bps)", rate, rate * 8 * chnls * 2);
-    DEBUG("--%d channels, %d frames/chunk (%d bytes)", chnls, chunkSize / chnls / 2, chunkSize);
+    DEBUG("--%d Hz (%d bps)", rate, rate * 8 * chnls * signalProcessingDefaults::BYTES_PER_SAMPLE);
+    DEBUG("--%d channels, %d frames/chunk (%d bytes)", chnls, chunkSize / chnls / signalProcessingDefaults::BYTES_PER_SAMPLE, chunkSize);
     DEBUG("--%d ms chunks", chunkSize * 8 * 1000 / rate);
     return chunkSize;
 

@@ -4,9 +4,33 @@
 #include <pthread.h>
 #include <alsa/asoundlib.h>
 
-#define DEFAULT_DEVICE "default"
+#include "signalProcessingDefaults.h"
+
+
 
 namespace b3 {
+    namespace audioDriverDefaults {
+        constexpr char DEFAULT_DEVICE[] = "default";
+
+        constexpr _snd_pcm_format __get_default_format__()
+        {
+            switch (signalProcessingDefaults::DEFAULT_AUDIO_FORMAT) {
+                case (signalProcessingDefaults::PCM_16):
+                    return SND_PCM_FORMAT_S16;
+                case (signalProcessingDefaults::PCM_24):
+                    return SND_PCM_FORMAT_S24;
+                case (signalProcessingDefaults::PCM_32):
+                    return SND_PCM_FORMAT_S32;
+                default:
+                    return SND_PCM_FORMAT_UNKNOWN;
+            }
+        }
+
+        constexpr _snd_pcm_format DEFAULT_OUTPUT_FORAMT = __get_default_format__();
+
+    };
+
+
     class audioDriver {
     public:
         audioDriver() :
@@ -20,25 +44,43 @@ namespace b3 {
         ~audioDriver() { closeDevice(); }
 
         /**
-         * @brief
-         * Opens audio device. Thread safe.
+         * @brief Opens an audio device with the specified parameters.
          *
-         * @param deviceName device name to open
-         * @param sampleRate sample rate to open device at
-         * @param channels # of audio channels
-         * @return 0 on success, -1 on failure
+         * This function initializes and configures an audio device for playback.
+         * It sets various hardware parameters such as sample rate, channels, and buffer size.
+         * If the device is already open, it will return an error.
+         *
+         * @param deviceName The name of the audio device to open.
+         * @param sampleRate The sample rate of the audio in frames per second.
+         * @param channels The number of audio channels (e.g., 1 for mono, 2 for stereo).
+         * @param buffSize The buffer size in frames.
+         * @return The size of the chunk in frames if successful, or a negative error code if failed.
+         *
+         * @note This function uses ALSA (Advanced Linux Sound Architecture) for audio device management.
+         *
+         * @warning Ensure that the device is not already open before calling this function.
+         *
          */
         int openDevice(const char *deviceName, uint32_t sampleRate, uint8_t channels, uint64_t buffsize);
 
         /**
-         * @brief
-         * Opens the default audio device. Thread safe.
+         * @brief Opens the default audio device with the specified parameters.
          *
-         * @param sampleRate sample rate to open device at
-         * @param channels # of audio channels
-         * @return 0 on success, -1 on failure
+         * This function initializes and configures an audio device for playback.
+         * It sets various hardware parameters such as sample rate, channels, and buffer size.
+         * If the device is already open, it will return an error.
+         *
+         * @param sampleRate The sample rate of the audio in frames per second.
+         * @param channels The number of audio channels (e.g., 1 for mono, 2 for stereo).
+         * @param buffSize The buffer size in frames.
+         * @return The size of the chunk in frames if successful, or a negative error code if failed.
+         *
+         * @note This function uses ALSA (Advanced Linux Sound Architecture) for audio device management.
+         *
+         * @warning Ensure that the device is not already open before calling this function.
+         *
          */
-        inline int openDevice(uint32_t sampleRate, uint8_t channels, uint64_t buffsize) { return openDevice(DEFAULT_DEVICE, sampleRate, channels, buffsize); }
+        inline int openDevice(uint32_t sampleRate, uint8_t channels, uint64_t buffsize) { return openDevice(audioDriverDefaults::DEFAULT_DEVICE, sampleRate, channels, buffsize); }
 
         /**
          * @brief
@@ -57,12 +99,14 @@ namespace b3 {
         int updateAudioChannelData(int sampleRate, int channels, int buffersize);
 
         /**
-         * @brief
-         * Writes audio data to the audio device. Thread safe.
+         * @brief Writes audio data to the audio device.
          *
-         * @param data audio data to write
-         * @param size size of data in bytes
-         * @return 0 on success, error ( < 0) on failures
+         * This function writes the provided audio data to the audio device if it is open.
+         * It handles potential buffer underruns and errors by attempting to recover the audio device.
+         *
+         * @param data Pointer to the audio data to be written.
+         * @param frameCount Number of frames of audio data to write.
+         * @return int Returns 0 on success, or a negative error code on failure.
          */
         int writeAudioData(uint8_t *data, int size);
 

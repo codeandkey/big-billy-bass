@@ -13,7 +13,24 @@ extern "C" {
 #include "signalProcessingDefaults.h"
 
 namespace b3 {
-    constexpr AVSampleFormat DEFAULT_DECODER_FORMAT = AVSampleFormat::AV_SAMPLE_FMT_S16;
+    namespace audioFileDefaults {
+        constexpr uint8_t FILE_NAME_BUFFER_SIZE = signalProcessingDefaults::FILE_NAME_BUFFER_SIZE;
+        
+        constexpr AVSampleFormat __get_default_codec(){
+            switch (signalProcessingDefaults::DEFAULT_AUDIO_FORMAT) {
+                case signalProcessingDefaults::PCM_16:
+                    return AV_SAMPLE_FMT_S16;
+                case signalProcessingDefaults::PCM_24:
+                    return AV_SAMPLE_FMT_S32;
+                case signalProcessingDefaults::PCM_32:
+                    return AV_SAMPLE_FMT_FLT;
+                default:
+                    return AV_SAMPLE_FMT_NONE;
+            }
+        }
+        constexpr AVSampleFormat DEFAULT_DECODER_FORMAT = __get_default_codec();
+    };
+
 
     class audioFile {
     public:
@@ -49,12 +66,7 @@ namespace b3 {
         }
         ~audioFile();
 
-        /**
-         * @brief Opens the audio file. Function is thread safe.
-         *
-         * @param fileName The name of the file to open
-         * @return int 0 on success, -1 on failure
-         */
+
         int openFile(const char *fileName);
 
         /**
@@ -62,18 +74,43 @@ namespace b3 {
          */
         void closeFile();
 
-
         /**
-         * @brief reads the next chunk of audio data from the file, blocking call until data is read or there is no more data. Function is thread safe.
+         * @brief Reads a chunk of audio data into the provided buffer.
          *
-         * @param buffer The buffer to read into
-         * @param readSize The number of bytes to read
-         * @return The number of bytes read, or -1 on failure
+         * This function reads up to `readSize` bytes of audio data from the audio file
+         * into the provided buffer. Function is thread safe.
+         *
+         * @param buffer Pointer to the buffer where the audio data will be stored.
+         * @param readSize The maximum number of bytes to read into the buffer.
+         * @return The number of bytes actually read and stored in the buffer, or -1 if the file is not open.
+         *
+         * @note The function assumes that the frame has been allocated and initialized.
+         * @warning If the file is not open, the function will log a warning and return -1.
          */
         int readChunk(uint8_t *buffer, int readSize);
 
-        int chunkSizeBytes() const;
+        /**
+         * @brief Calculates the chunk size in bytes based on the given chunk size in milliseconds.
+         *
+         * This function computes the size of a chunk of audio data in bytes, based on:
+         *
+         * - The output sample rate from the file (sample rate which would be expected in a `readChunk()` call).
+         *
+         * - The number of channels in the file.
+         *
+         * - The given chunk size in milliseconds.
+         *
+         * - The default audio format defined in `signalProcessingDefaults::DEFAULT_DECODER_FORMAT`.
+         *
+         *
+         * @param chunkSizeMs The size of the chunk in milliseconds.
+         * @return The size of the chunk in bytes. Returns 0 if the file is not open.
+         */
+        int chunkSizeBytes(float chunkSizeMs) const;
 
+        /**
+         * @return number of audio channels in the loaded audio file. 0 if no file is loaded
+         */
         inline int getChannels() const
         {
             if (!m_fileOpen)
@@ -82,14 +119,12 @@ namespace b3 {
             return m_decoderContext->ch_layout.nb_channels;
         }
 
-        inline int getBitRate() const
-        {
-            if (!m_fileOpen)
-                return 0;
-            assert(m_decoderContext != nullptr);
-            return m_decoderContext->bit_rate;
-        }
 
+        /**
+         * @brief Returns the sample rate of the loaded audio file.
+         * @return sample rate (hz), 0 if no file is loaded
+        
+         */
         inline int getSampleRate() const
         {
             if (!m_fileOpen)
@@ -108,24 +143,37 @@ namespace b3 {
         {
             assert(m_frame != nullptr);
             assert(m_decoderContext != nullptr);
-            return av_samples_get_buffer_size(NULL, m_decoderContext->ch_layout.nb_channels, m_frame->nb_samples, m_decoderContext->sample_fmt, 1);
+            return _getFrameSize(m_frame);
         }
 
-        inline int _getFrameSize(AVFrame* frame) const
+        inline int _getFrameSize(AVFrame *frame) const
         {
             if (frame == nullptr)
                 return 0;
             assert(m_decoderContext != nullptr);
-            return av_samples_get_buffer_size(NULL, m_decoderContext->ch_layout.nb_channels, frame->nb_samples, m_decoderContext->sample_fmt, 1);
+            return frame->ch_layout.nb_channels * frame->nb_samples * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT);
         }
 
         /**
-         * @brief reads the next frame from the audio file. Function is NOT thread safe.
+         * @brief Reads a frame from the audio file.
          *
-         * @param frame The frame to read into
-         * @return int 0 on success, -1 on failure
-         * @note
-         * This function does not allocate memory for the frame, it is expected to be pre-allocated
+         * This function reads a frame from the audio file and decodes it. It handles
+         * packet reading, decoding, and frame conversion. If the file is not open,
+         * it returns an error. The frame is decoded into the format specified by `audioFileDefaults::DEFAULT_DECODER_FORMAT`.
+         *
+         * @param frame Pointer to an AVFrame structure where the decoded frame will be stored.
+         * @return int Returns the size of the frame buffer on success, or a negative error code on failure.
+         *
+         * Error Codes:
+         * - -1: File not open or could not find a valid packet.
+         *
+         * - AVERROR_EOF: End of file reached.
+         *
+         * - AVERROR(EAGAIN): Decoder needs more packets to produce a frame.
+         *
+         * Other negative values:
+         *
+         * - Errors during packet reading, sending, receiving, or frame conversion.
          */
         int _readFrame(AVFrame *frame);
 
@@ -137,7 +185,7 @@ namespace b3 {
         AVFrame *m_frame;   // used for reading frames, most recent frame read is stored here
         int8_t m_streamIndx;
 
-        char m_audioFileName[FILE_NAME_BUFFER_SIZE];
+        char m_audioFileName[audioFileDefaults::FILE_NAME_BUFFER_SIZE];
 
         int m_frameSampleNdx;
         bool m_fileOpen;

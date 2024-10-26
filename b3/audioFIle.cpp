@@ -19,13 +19,7 @@ b3::audioFile::~audioFile()
 int b3::audioFile::openFile(const char *fileName)
 {
     pthread_mutex_lock(&m_fileMutex);
-
-    m_formatContext = avformat_alloc_context();
-    if (!m_formatContext) {
-        ERROR("Failed to allocate format context");
-        goto openFileErrorCleanup;
-    }
-
+    
     // open the file
     if (avformat_open_input(&m_formatContext, fileName, nullptr, nullptr) < 0) {
         WARNING("Failed to open file: %s", fileName);
@@ -54,6 +48,9 @@ int b3::audioFile::openFile(const char *fileName)
     // get the codec parameters
     avcodec_parameters_to_context(m_decoderContext, m_formatContext->streams[m_streamIndx]->codecpar);
 
+    // set sample format
+    m_decoderContext->sample_fmt = audioFileDefaults::DEFAULT_DECODER_FORMAT;
+
     if (avcodec_open2(m_decoderContext, m_decoder, nullptr) < 0) {
         WARNING("Failed to open codec");
         //de-allocated decoder context
@@ -67,8 +64,8 @@ int b3::audioFile::openFile(const char *fileName)
     // allocate the converter
     swr_alloc_set_opts2(&m_swrContext,
         &m_decoderContext->ch_layout,
-        DEFAULT_DECODER_FORMAT,
-        m_decoderContext->sample_rate,
+        audioFileDefaults::DEFAULT_DECODER_FORMAT,
+        signalProcessingDefaults::DEFAULT_SAMPLE_RATE,
         &m_decoderContext->ch_layout,
         m_decoderContext->sample_fmt,
         m_decoderContext->sample_rate,
@@ -76,7 +73,7 @@ int b3::audioFile::openFile(const char *fileName)
 
     m_frame = av_frame_alloc();
 
-    strncpy(m_audioFileName, fileName, FILE_NAME_BUFFER_SIZE);
+    strncpy(m_audioFileName, fileName, audioFileDefaults::FILE_NAME_BUFFER_SIZE);
     m_fileOpen = true;
 
     pthread_mutex_unlock(&m_fileMutex);
@@ -144,7 +141,7 @@ int b3::audioFile::readChunk(uint8_t *buffer, int readSize)
     do {
         if (m_frameSampleNdx == 0 && _readFrame(m_frame) <= 0)
             break;
-        frameSize = m_frame->ch_layout.nb_channels * m_frame->nb_samples * av_get_bytes_per_sample(DEFAULT_DECODER_FORMAT);
+        frameSize = _getFrameSize(m_frame);
         int copysize = MIN(frameSize - m_frameSampleNdx, readSize - samplesStored);
 
         memcpy(buffer + samplesStored, m_frame->data[0] + m_frameSampleNdx, copysize);
@@ -169,12 +166,12 @@ int b3::audioFile::_readFrame(AVFrame *frame)
     int ret;
     bool readAchieved = false;
     AVPacket *packet = av_packet_alloc();
-    av_new_packet(packet, 0);
     AVFrame *tempFrame = av_frame_alloc();
 
+    av_new_packet(packet, 0);
 
     // get most current frame
-    for (int pckCnt = 0; pckCnt < m_formatContext->nb_streams; pckCnt++){
+    for (int pckCnt = 0; pckCnt < m_formatContext->nb_streams; pckCnt++) {
         if ((ret = av_read_frame(m_formatContext, packet)) < 0) {
             if (ret == AVERROR_EOF)
                 INFO("Decoder detected EOF");
@@ -184,17 +181,17 @@ int b3::audioFile::_readFrame(AVFrame *frame)
             goto errorCleanup;
         }
 
-        if (packet->stream_index == m_streamIndx) 
+        if (packet->stream_index == m_streamIndx)
             break;
         else
             av_packet_unref(packet); // skip this packet if we aren't in the right stream...
     }
-    if (packet->stream_index != m_streamIndx){
+    if (packet->stream_index != m_streamIndx) {
         ERROR("Could not find valid packet");
         ret = -1;
         goto errorCleanup;
     }
-    
+
 
     if (avcodec_send_packet(m_decoderContext, packet) < 0) {
         WARNING("Failed to send packet to decoder");
@@ -202,8 +199,6 @@ int b3::audioFile::_readFrame(AVFrame *frame)
     }
 
     ret = avcodec_receive_frame(m_decoderContext, tempFrame);
-
-    av_frame_unref(frame);
 
     if (ret == AVERROR(EAGAIN)) {
         m_packetSent = false;
@@ -216,11 +211,12 @@ int b3::audioFile::_readFrame(AVFrame *frame)
         goto errorCleanup;
     }
 
+    av_frame_unref(frame);
 
     // convert frame to the data we like
     frame->sample_rate = tempFrame->sample_rate;
     frame->ch_layout = tempFrame->ch_layout;
-    frame->format = DEFAULT_DECODER_FORMAT;
+    frame->format = audioFileDefaults::DEFAULT_DECODER_FORMAT;
 
     ret = swr_convert_frame(m_swrContext, frame, tempFrame);
     if (ret < 0) {
@@ -241,14 +237,19 @@ errorCleanup:
 }
 
 
-int b3::audioFile::chunkSizeBytes() const
+
+int b3::audioFile::chunkSizeBytes(float chunkSizeMs) const
 {
     // calculates chunks size based on constants defined in signalProcessingDefaults.h and the file sample rate
     if (!m_fileOpen) {
         WARNING("File not open");
         return 0;
     }
+    assert(chunkSizeMs >= 0);
     assert(m_decoderContext != nullptr);
-    /*     [frames/second] * [samples / frame] * [chunk size in s] * [bytes/ pcm16 frames] */
-    return getSampleRate() * getChannels() * CHUNK_SIZE_MS / 1000 * 2;
+
+    return getSampleRate()                                                      // [frames / second]
+        * getChannels()                                                         // [channels / frame]
+        * chunkSizeMs / 1000                                                    // [frames / chunk]
+        * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT);   // [bytes / frame]
 }

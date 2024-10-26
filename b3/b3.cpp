@@ -54,8 +54,8 @@ class EchoTask : public Task {
 
 int main(int argc, char** argv) {
     Runner runner;
-    float lpf = LPF_CUTOFF_DEFAULT;
-    float hpf = HPF_CUTOFF_DEFAULT;
+    float lpf = signalProcessingDefaults::LPF_CUTOFF_DEFAULT;
+    float hpf = signalProcessingDefaults::HPF_CUTOFF_DEFAULT;
     char fileName[255] = "test.mp3";
     for (int i = 0; i < argc; ++i) {
         if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
