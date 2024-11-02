@@ -6,18 +6,20 @@
 
 namespace b3 {
 
-    enum filterType {
-        LPF_type,
-        HPF_type
-    }; // enum filterType
-
-
 #define Q 0.707
 #define GAIN 1
 
 
     class biQuadFilter {
     public:
+        enum filterType {
+            LPF,
+            HPF,
+            
+            _filterTypeCount
+        }; // enum filterType
+
+
         biQuadFilter(float sampleRate, float cutoff, float q, float gain, filterType type) :
             m_sampleRate(sampleRate),
             m_cutoff(cutoff),
@@ -39,6 +41,7 @@ namespace b3 {
 
         // updates buffers with new sample. Returns filtered sample
         float update(float sample);
+
 
 
     private:

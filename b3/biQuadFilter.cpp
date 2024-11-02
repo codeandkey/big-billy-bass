@@ -41,7 +41,7 @@ void biQuadFilter::updateCoeffs()
     float b0, b1, b2, a0, a1, a2;
 
     switch (m_filterType) {
-    case LPF_type:
+    case LPF:
         b0 = (1 - cos(w0)) / 2;
         b1 = b0 * 2;
         b2 = b0;
@@ -49,7 +49,7 @@ void biQuadFilter::updateCoeffs()
         a1 = -2 * cos(w0);
         a2 = 1 - alpha;
         break;
-    case HPF_type:
+    case HPF:
         b0 = (1 + cos(w0)) / 2;
         b1 = -b0 * 2;
         b2 = b0;

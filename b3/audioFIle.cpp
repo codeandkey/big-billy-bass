@@ -19,7 +19,8 @@ b3::audioFile::~audioFile()
 int b3::audioFile::openFile(const char *fileName)
 {
     pthread_mutex_lock(&m_fileMutex);
-    
+
+
     // open the file
     if (avformat_open_input(&m_formatContext, fileName, nullptr, nullptr) < 0) {
         WARNING("Failed to open file: %s", fileName);
@@ -62,14 +63,23 @@ int b3::audioFile::openFile(const char *fileName)
     DEBUG("--input sample format: %d", m_decoderContext->sample_fmt);
 
     // allocate the converter
-    swr_alloc_set_opts2(&m_swrContext,
+    swr_alloc_set_opts2(
+        &m_swrContext,
         &m_decoderContext->ch_layout,
         audioFileDefaults::DEFAULT_DECODER_FORMAT,
         signalProcessingDefaults::DEFAULT_SAMPLE_RATE,
         &m_decoderContext->ch_layout,
         m_decoderContext->sample_fmt,
         m_decoderContext->sample_rate,
-        0, nullptr);
+        0, nullptr
+    );
+
+    DEBUG("Resampler Settings:");
+    DEBUG("--sample rate: %d", getSampleRate());
+
+    // seek to timetag
+    if (av_seek_frame(m_formatContext, m_streamIndx, m_seekTimeTag * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD))
+        ERROR("Failed to seek to %llu", m_seekTimeTag);
 
     m_frame = av_frame_alloc();
 
@@ -153,6 +163,28 @@ int b3::audioFile::readChunk(uint8_t *buffer, int readSize)
     pthread_mutex_unlock(&m_fileMutex);
 
     return samplesStored;
+}
+
+inline int b3::audioFile::_normalizeAudio(const char *fileName)
+{
+    // pipe is a lot simpler in this case then directly using the ffmpeg libs
+    char command[512];
+    snprintf(
+        command, sizeof(command),
+        "ffmpeg -i \"%s\" -filter:a loudnorm=I=%.2f:LRA=7:TP=-1.5 \"%s\"",
+        fileName,
+        audioFileDefaults::DEFAULT_NORMALIZATION_LUFS,
+        audioFileDefaults::DEFAULT_FILE_NAME
+    );
+    FILE *pipe = popen(command, "r");
+    if (!pipe) {
+        WARNING("Failed to open normalization pipe. Skipping normalization step");
+        return -1;
+    }
+
+    pclose(pipe);
+    DEBUG("Audio successfully normalized into %s", audioFileDefaults::DEFAULT_FILE_NAME);
+    return 0;
 }
 
 int b3::audioFile::_readFrame(AVFrame *frame)
@@ -250,6 +282,16 @@ int b3::audioFile::chunkSizeBytes(float chunkSizeMs) const
 
     return getSampleRate()                                                      // [frames / second]
         * getChannels()                                                         // [channels / frame]
-        * chunkSizeMs / 1000                                                    // [frames / chunk]
+        * chunkSizeMs / 1000                                                    // [seconds / chunk]
         * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT);   // [bytes / frame]
+}
+
+int b3::audioFile::getSampleRate() const
+{
+    if (!m_fileOpen)
+        return 0;
+    assert(m_swrContext != nullptr);
+    int64_t fsOut;
+    av_opt_get_int(m_swrContext, "out_sample_rate", 0, &fsOut);
+    return fsOut;
 }

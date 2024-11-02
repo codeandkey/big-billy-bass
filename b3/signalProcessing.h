@@ -5,100 +5,49 @@
 #include <cstring>
 #include <cstdio>
 
-#include "signalProcessingDefaults.h"
 #include "audioFile.h"
-#include "task.h"
-#include "state.h"
 #include "timeManager.h" 
 #include "logger.h"
+#include "state.h"
 #include "biQuadFilter.h"
 #include "audioDriver.h"
 
 namespace b3 {
     namespace SPD = signalProcessingDefaults;
 
-    struct filterSettings {
-
-        filterSettings() :
-            lpfCutoff(SPD::LPF_CUTOFF_DEFAULT),
-            hpfCutoff(SPD::HPF_CUTOFF_DEFAULT)
-        {}
-
-        float lpfCutoff;        //low pass filter cutoff (Hz)
-        float hpfCutoff;        //high pass filter cutoff (Hz)
-    };
-
-    class signalProcessor : public Task {
+    class signalProcessor {
     public:
         signalProcessor() :
-            m_fileLoaded(0),
-            m_activeState(State::STOPPED),
+            m_driverLoaded(false),
+            m_fillBuffer(false),
+            m_stopCommand(false),
+            m_fileLoaded(false),
+            m_closeFile(false),
             m_audioFile(nullptr),
-            m_lpf(nullptr),
-            m_hpf(nullptr),
+            m_underRunCounter(0),
+            m_activeState(State::STOPPED),
             m_alsaDriver(nullptr),
             m_chunkTimestamp(timeManager::getUsSinceEpoch())
         {
-            m_fileClosed = false;
+            memset(m_filters, 0, sizeof(m_filters));
+            m_filterSettings[biQuadFilter::HPF] = SPD::HPF_CUTOFF_DEFAULT;
+            m_filterSettings[biQuadFilter::LPF] = SPD::LPF_CUTOFF_DEFAULT;
+            m_closeFile = false;
         }
 
         ~signalProcessor();
 
         /**
-         * @brief Processes a frame based on the current state.
-         *
-         * This function processes a frame of data if the current state matches the active state.
-         * It first checks if there is time remaining until the next chunk should be processed.
-         * If there is time remaining, the function returns early.
-         *
-         * When the active state is PLAYING, it processes chunks of data. If the buffer needs to be filled,
-         * it processes all but the last chunk and then processes the final chunk.
-         *
-         * @param state The current state to be checked against the active state.
+         * To be called every time a new chunk is to be processed
          */
-        virtual void frame(State state) override;
+        void update(State state);
 
 
-        /**
-         * @brief Handles state transitions for the signal processor.
-         *
-         * This function processes transitions between different states of the signal processor.
-         * It ensures that the necessary conditions are met before transitioning to a new state.
-         *
-         * @param from The current state of the signal processor.
-         * @param to The state to transition to.
-         *
-         * @note Logs the state transition with the previous and new state values.
-         * @note The function will return immediately if the signal processor is already in the target state.
-         * @note The function will assert if the current state does not match the 'from' state.
-         *
-         * @note State Transition Logic:
-         *
-         * PLAYING:
-         *   - Requires an audio driver to be loaded.
-         *
-         *   - Requires an audio file to be loaded.
-         *
-         *   - Sets the buffer fill flag to true.
-         *
-         * PAUSED:
-         *
-         *   - If transitioning from STOPPED, requires an audio driver and file to be loaded.
-         *
-         * STOPPED:
-         *
-         *   - Unloads the audio file.
-         *
-         *   - Closes the ALSA device.
-         *
-         * @warning If the required conditions for a state transition are not met, an error message will be logged and the transition will not occur.
-         *
-         *
-         */
-        virtual void onTransition(State from, State to) override;
 
 
         // getters / setters
+
+        inline State getState() const { return m_activeState;}
 
         /**
          * @brief
@@ -128,44 +77,33 @@ namespace b3 {
         {
             m_fileLoaded = 0;
             m_audioFile = nullptr;
-            delete m_lpf;
-            delete m_hpf;
-            m_lpf = nullptr;
-            m_hpf = nullptr;
+            for (int fltrNdx = 0; fltrNdx < biQuadFilter::_filterTypeCount; fltrNdx++)
+                delete m_filters[fltrNdx];
         }
 
-        /**
-         * @brief sets the low pass filter cutoff frequency
-         * @param cutoff  cutoff frequency in Hz
-         */
-        inline void setLPF(float cutoff)
-        {
-            m_filterSettings.lpfCutoff = cutoff;
-            if (m_fileLoaded) {
-                assert(m_lpf);
-                m_lpf->setCutoff(cutoff);
-            }
-        }
 
-     /**
-      * @brief sets the high pass filter cutoff frequency
-      * @param cutoff cutoff frequency in Hz
-      */
-        inline void setHPF(float cutoff)
-        {
-            m_filterSettings.hpfCutoff = cutoff;
-            if (m_fileLoaded) {
-                assert(m_hpf);
-                m_hpf->setCutoff(cutoff);
-            }
-        }
+#define __setFilter(setter, accessor)                                   \
+        inline void setter(float cutoff)                                \
+        {                                                               \
+            m_filterSettings[accessor] = cutoff;                        \
+            if (m_filters[accessor]){                                    \
+                m_filters[accessor]->setCutoff(cutoff);                  \
+            }                                                           \
+        }             
 
-        const inline filterSettings getFilterSettings() const { return m_filterSettings; }
+        __setFilter(setLPF, biQuadFilter::LPF)
+        __setFilter(setHPF, biQuadFilter::HPF)
 
         uint64_t usToNextChunk();
 
-
     private:
+
+        /**
+         * @brief Sets processor state.
+         * @param to State to set processor to.
+         */
+        void setState(State to);
+
 
         /**
          * @brief
@@ -174,39 +112,30 @@ namespace b3 {
          */
         int _processChunk();
 
-        void _negotiateChunkSize();  
+        void _negotiateChunkSize();
+
         // status fields
-        union {
-            struct {
-                uint8_t m_fileLoaded : 1;
-                uint8_t m_driverLoaded : 1;
-                uint8_t __state_padding : 6;
-            };
-            uint8_t m_flags;
-        };
+        bool m_fileLoaded;
+        bool m_driverLoaded;
 
-        union {
-            struct {
-                uint8_t m_fillBuffer : 1;
-                uint8_t m_stopCommand : 1;
-                uint8_t m_fileClosed : 1;
-                uint8_t __signal_padding : 6;
-            };
-            uint8_t m_signalFlags;
-        };
+        // flags
+        bool m_fillBuffer;
+        bool m_stopCommand;
+        bool m_closeFile;
 
-        audioFile *m_audioFile;
-        filterSettings m_filterSettings;
         State m_activeState;
 
-        biQuadFilter *m_lpf;
-        biQuadFilter *m_hpf;
 
+        audioFile *m_audioFile;
         audioDriver *m_alsaDriver;
 
+        float m_filterSettings[biQuadFilter::_filterTypeCount];
+        biQuadFilter *m_filters[biQuadFilter::_filterTypeCount];
+        int m_underRunCounter;
+
         uint64_t m_chunkTimestamp;
-        uint16_t m_chunkSize;
         uint64_t m_chunkSizeUs;
+        uint16_t m_chunkSize;
 
         FILE *m_signalDebugFile;
     };

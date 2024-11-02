@@ -9,19 +9,25 @@
 using namespace b3;
 using namespace audioDriverDefaults;
 
+
+
 void b3::audioDriver::closeDevice()
 {
     pthread_mutex_lock(&m_audioMutex);
     if (m_deviceOpen) {
+#ifndef DUMMY_ALSA_DRIVERS
         snd_pcm_drain(m_audioDevice);
         snd_pcm_close(m_audioDevice);
         snd_pcm_hw_params_free(m_hardwareParams);
         m_audioDevice = nullptr;
         m_hardwareParams = nullptr;
+#endif
         m_deviceOpen = false;
     }
+#ifndef DUMMY_ALSA_DRIVERS
     assert(!m_audioDevice);
     assert(!m_hardwareParams);
+#endif
     pthread_mutex_unlock(&m_audioMutex);
 }
 
@@ -30,9 +36,9 @@ int b3::audioDriver::updateAudioChannelData(int sampleRate, int channels, int bu
     // note: everything here is already thread safe.
     if (m_deviceOpen)
         closeDevice();
-
+#ifndef DUMMY_ALSA_DRIVERS
     assert(!m_audioDevice);
-
+#endif
     return openDevice(DEFAULT_DEVICE, sampleRate, channels, bufferSize);
 }
 
@@ -41,6 +47,7 @@ int b3::audioDriver::writeAudioData(uint8_t *data, int frameCount)
     pthread_mutex_lock(&m_audioMutex);
     int ret;
     if (m_deviceOpen) {
+#ifndef DUMMY_ALSA_DRIVERS
         ret = snd_pcm_writei(m_audioDevice, data, frameCount);
         if (ret == -EPIPE)
             WARNING("Audio buffer underrun");
@@ -52,6 +59,7 @@ int b3::audioDriver::writeAudioData(uint8_t *data, int frameCount)
             pthread_mutex_unlock(&m_audioMutex);
             return ret;
         }
+#endif
     }
     pthread_mutex_unlock(&m_audioMutex);
     return 0;
@@ -79,6 +87,7 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     uint32_t chnls, rate, frameRate;
     uint64_t chunkSize;
 
+#ifndef DUMMY_ALSA_DRIVERS
     if ((err = snd_pcm_open(&m_audioDevice, deviceName, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
         ERROR("Failed to open audio device %s", deviceName);
         goto badInitCleanup;
@@ -121,9 +130,10 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     DEBUG("--%d Hz (%d bps)", rate, rate * 8 * chnls * signalProcessingDefaults::BYTES_PER_SAMPLE);
     DEBUG("--%d channels, %d frames/chunk (%d bytes)", chnls, chunkSize / chnls / signalProcessingDefaults::BYTES_PER_SAMPLE, chunkSize);
     DEBUG("--%d ms chunks", chunkSize * 8 * 1000 / rate);
+#endif 
     return chunkSize;
 
-
+#ifndef DUMMY_ALSA_DRIVERS
 badInitCleanup:
     ERROR("%s", snd_strerror(err));
     if (m_audioDevice) {
@@ -135,4 +145,5 @@ badInitCleanup:
 
     pthread_mutex_unlock(&m_audioMutex);
     return err;
+#endif
 }

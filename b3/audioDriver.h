@@ -1,41 +1,46 @@
 #pragma once
 
+
+extern "C" {
 #include <stdint.h>
 #include <pthread.h>
-#include <alsa/asoundlib.h>
 
+#ifndef DUMMY_ALSA_DRIVERS
+# include <alsa/asoundlib.h>
+#endif
+}
 #include "signalProcessingDefaults.h"
-
-
 
 namespace b3 {
     namespace audioDriverDefaults {
-        constexpr char DEFAULT_DEVICE[] = "default";
-
+        constexpr const char *DEFAULT_DEVICE = "default";
+#ifndef DUMMY_ALSA_DRIVERS
         constexpr _snd_pcm_format __get_default_format__()
         {
             switch (signalProcessingDefaults::DEFAULT_AUDIO_FORMAT) {
-                case (signalProcessingDefaults::PCM_16):
-                    return SND_PCM_FORMAT_S16;
-                case (signalProcessingDefaults::PCM_24):
-                    return SND_PCM_FORMAT_S24;
-                case (signalProcessingDefaults::PCM_32):
-                    return SND_PCM_FORMAT_S32;
-                default:
-                    return SND_PCM_FORMAT_UNKNOWN;
+            case (signalProcessingDefaults::PCM_16):
+                return SND_PCM_FORMAT_S16;
+            case (signalProcessingDefaults::PCM_24):
+                return SND_PCM_FORMAT_S24;
+            case (signalProcessingDefaults::PCM_32):
+                return SND_PCM_FORMAT_S32;
+            default:
+                return SND_PCM_FORMAT_UNKNOWN;
             }
         }
 
         constexpr _snd_pcm_format DEFAULT_OUTPUT_FORAMT = __get_default_format__();
-
+#endif
     };
 
 
     class audioDriver {
     public:
         audioDriver() :
+#ifndef DUMMY_ALSA_DRIVERS
             m_audioDevice(nullptr),
             m_hardwareParams(nullptr),
+#endif
             m_deviceOpen(false)
         {
             m_deviceName[0] = '\0';
@@ -111,9 +116,10 @@ namespace b3 {
         int writeAudioData(uint8_t *data, int size);
 
     private:
+#ifndef DUMMY_ALSA_DRIVERS
         snd_pcm_t *m_audioDevice;
         snd_pcm_hw_params_t *m_hardwareParams;
-
+#endif
         pthread_mutex_t m_audioMutex;
         bool m_deviceOpen;
 

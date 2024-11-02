@@ -1,13 +1,14 @@
 #pragma once
+
+extern "C" {
 #include <stdint.h>
-
-
+}
 
 namespace signalProcessingDefaults {
 
 
-    constexpr float CHUNK_SIZE_MS = 500.; //  ms chunks
-    constexpr float BUFFER_LENGTH_S = CHUNK_SIZE_MS * 3;
+    constexpr float CHUNK_SIZE_MS = 25.; //  ms chunks
+    constexpr float BUFFER_LENGTH_S = CHUNK_SIZE_MS * 2;
 
     constexpr uint8_t CHUNK_COUNT = BUFFER_LENGTH_S / CHUNK_SIZE_MS;
     constexpr uint8_t FILE_NAME_BUFFER_SIZE = 255;
@@ -16,7 +17,7 @@ namespace signalProcessingDefaults {
     constexpr float HPF_CUTOFF_DEFAULT = 5000;     // most music won't have noise below 20Hz if well mastered
 
     // nice defaults for audio processing
-    enum audioFormat {  
+    enum audioFormat {
         PCM_16 = 2,     // 16 bit PCM, 2 bytes per sample
         PCM_24 = 3,     // 24 bit PCM, 3 bytes per sample
         PCM_32 = 4,     // 32 bit PCM, 4 bytes per sample
@@ -28,14 +29,14 @@ namespace signalProcessingDefaults {
     constexpr uint8_t __get_bytes_per_frame_per_channel()
     {
         switch (DEFAULT_AUDIO_FORMAT) {
-            case PCM_16:
-                return PCM_16;
-            case PCM_24:
-                return PCM_24;
-            case PCM_32:
-                return PCM_32;
-            default:
-                return 0;
+        case PCM_16:
+            return PCM_16;
+        case PCM_24:
+            return PCM_24;
+        case PCM_32:
+            return PCM_32;
+        default:
+            return 0;
         }
     }
 

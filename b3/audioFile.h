@@ -15,17 +15,19 @@ extern "C" {
 namespace b3 {
     namespace audioFileDefaults {
         constexpr uint8_t FILE_NAME_BUFFER_SIZE = signalProcessingDefaults::FILE_NAME_BUFFER_SIZE;
-        
-        constexpr AVSampleFormat __get_default_codec(){
+        constexpr const char *DEFAULT_FILE_NAME = "tmp.wav";
+        constexpr const float DEFAULT_NORMALIZATION_LUFS = -5.;
+        constexpr AVSampleFormat __get_default_codec()
+        {
             switch (signalProcessingDefaults::DEFAULT_AUDIO_FORMAT) {
-                case signalProcessingDefaults::PCM_16:
-                    return AV_SAMPLE_FMT_S16;
-                case signalProcessingDefaults::PCM_24:
-                    return AV_SAMPLE_FMT_S32;
-                case signalProcessingDefaults::PCM_32:
-                    return AV_SAMPLE_FMT_FLT;
-                default:
-                    return AV_SAMPLE_FMT_NONE;
+            case signalProcessingDefaults::PCM_16:
+                return AV_SAMPLE_FMT_S16;
+            case signalProcessingDefaults::PCM_24:
+                return AV_SAMPLE_FMT_S32;
+            case signalProcessingDefaults::PCM_32:
+                return AV_SAMPLE_FMT_FLT;
+            default:
+                return AV_SAMPLE_FMT_NONE;
             }
         }
         constexpr AVSampleFormat DEFAULT_DECODER_FORMAT = __get_default_codec();
@@ -43,13 +45,14 @@ namespace b3 {
             m_frame(nullptr),
             m_frameSampleNdx(0),
             m_fileOpen(false),
-            m_packetSent(false)
+            m_packetSent(false),
+            m_seekTimeTag(0)
         {
             m_audioFileName[0] = '\0';
             pthread_mutex_init(&m_fileMutex, nullptr);
         }
 
-        audioFile(char *fileName) :
+        audioFile(char *fileName, uint64_t timetag) :
             m_formatContext(nullptr),
             m_decoderContext(nullptr),
             m_swrContext(nullptr),
@@ -58,7 +61,8 @@ namespace b3 {
             m_frame(nullptr),
             m_frameSampleNdx(0),
             m_fileOpen(false),
-            m_packetSent(false)
+            m_packetSent(false),
+            m_seekTimeTag(timetag)
         {
             m_audioFileName[0] = '\0';
             pthread_mutex_init(&m_fileMutex, nullptr);
@@ -123,15 +127,9 @@ namespace b3 {
         /**
          * @brief Returns the sample rate of the loaded audio file.
          * @return sample rate (hz), 0 if no file is loaded
-        
+
          */
-        inline int getSampleRate() const
-        {
-            if (!m_fileOpen)
-                return 0;
-            assert(m_decoderContext != nullptr);
-            return m_decoderContext->sample_rate;
-        }
+        int getSampleRate() const;
 
     private:
         /**
@@ -153,6 +151,8 @@ namespace b3 {
             assert(m_decoderContext != nullptr);
             return frame->ch_layout.nb_channels * frame->nb_samples * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT);
         }
+
+        inline int _normalizeAudio(const char *fileName);
 
         /**
          * @brief Reads a frame from the audio file.
@@ -190,6 +190,7 @@ namespace b3 {
         int m_frameSampleNdx;
         bool m_fileOpen;
         bool m_packetSent;
+        uint64_t m_seekTimeTag;
 
         pthread_mutex_t m_fileMutex;
     }; // class audioFile
