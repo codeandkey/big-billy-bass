@@ -2,7 +2,7 @@
 
 
 #ifndef LOGGING_DISABLED
-# define LOG_V(LEVEL, MESSAGE, ...) _logger::log(LEVEL, __FILE__, __LINE__, __func__, MESSAGE, ##__VA_ARGS__)
+# define LOG_V(LEVEL, MESSAGE, ...) _logger::log(LEVEL, __FILE_NAME__, __LINE__, __func__, MESSAGE, ##__VA_ARGS__)
 # define LOG(LEVEL, MESSAGE, ...) _logger::log(LEVEL,"",0,"", MESSAGE, ##__VA_ARGS__)
 # define DEBUG(MESSAGE, ...) LOG(_logger::LogLevel::DEBUG, MESSAGE, ##__VA_ARGS__)
 # define INFO(MESSAGE, ...) LOG(_logger::LogLevel::INFO, MESSAGE, ##__VA_ARGS__)

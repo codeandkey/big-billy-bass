@@ -50,6 +50,14 @@ namespace b3 {
         inline State getState() const { return m_activeState;}
 
         /**
+         * @brief Sets processor state.
+         * @param to State to set processor to.
+         */
+        void setState(State to);
+
+
+
+        /**
          * @brief
          * Sets the audio driver for the audio processor. The audio processor does not own the driver.
          *
@@ -98,12 +106,6 @@ namespace b3 {
 
     private:
 
-        /**
-         * @brief Sets processor state.
-         * @param to State to set processor to.
-         */
-        void setState(State to);
-
 
         /**
          * @brief
@@ -125,6 +127,7 @@ namespace b3 {
 
         State m_activeState;
 
+        timeManager m_tm;
 
         audioFile *m_audioFile;
         audioDriver *m_alsaDriver;

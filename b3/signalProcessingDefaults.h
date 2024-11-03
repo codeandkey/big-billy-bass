@@ -7,7 +7,7 @@ extern "C" {
 namespace signalProcessingDefaults {
 
 
-    constexpr float CHUNK_SIZE_MS = 25.; //  ms chunks
+    constexpr float CHUNK_SIZE_MS = 50.; //  ms chunks
     constexpr float BUFFER_LENGTH_S = CHUNK_SIZE_MS * 2;
 
     constexpr uint8_t CHUNK_COUNT = BUFFER_LENGTH_S / CHUNK_SIZE_MS;

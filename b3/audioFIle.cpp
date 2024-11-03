@@ -124,7 +124,6 @@ void b3::audioFile::closeFile()
     assert(m_decoderContext == nullptr);
     assert(m_formatContext == nullptr);
     assert(m_swrContext == nullptr);
-    assert(m_decoder == nullptr);
     assert(m_frame == nullptr);
     assert(m_streamIndx == -1);
     assert(m_audioFileName[0] == '\0');
@@ -209,7 +208,6 @@ int b3::audioFile::_readFrame(AVFrame *frame)
                 INFO("Decoder detected EOF");
             else
                 WARNING("Failed to read frame");
-            av_packet_free(&packet);
             goto errorCleanup;
         }
 
@@ -282,8 +280,9 @@ int b3::audioFile::chunkSizeBytes(float chunkSizeMs) const
 
     return getSampleRate()                                                      // [frames / second]
         * getChannels()                                                         // [channels / frame]
-        * chunkSizeMs / 1000                                                    // [seconds / chunk]
-        * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT);   // [bytes / frame]
+        * chunkSizeMs                                                           // [seconds / chunk]
+        * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT)    
+        / 1000;                                                                 
 }
 
 int b3::audioFile::getSampleRate() const

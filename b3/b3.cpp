@@ -18,15 +18,12 @@ extern "C" {
 
 using namespace b3;
 
-static signalProcessor *processor;
+static int shouldExit;
 
 void sigint_handler(int _sig)
 {
-    if (processor) {
-        // processor->setState(STOPPED);
-    } else {
-        ERROR("Processor not running for SIGINT");
-    }
+    INFO("SIGINT received, shutting down..");
+    shouldExit = 1;
 }
 
 int main(int argc, char **argv)
@@ -35,6 +32,9 @@ int main(int argc, char **argv)
     float hpf = signalProcessingDefaults::HPF_CUTOFF_DEFAULT;
     uint64_t timeTag = 0;
     char fileName[255] = "test.mp3";
+    int mouthMinRMS = 0, bodyMinRMS = 10000;
+
+    gpio::GpioConfig gpioConfig;
 
     for (int i = 0; i < argc; ++i) {
         if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
@@ -58,33 +58,46 @@ int main(int argc, char **argv)
         }
         if (std::string(argv[i]) == "-seek" && i + 1 < argc) {
             timeTag = std::stod(argv[i + 1]);
-            INFO("HPF setting: %s", argv[i + 1]);
+            INFO("Seeking to +%s seconds", argv[i + 1]);
+            i++;
+        }
+        if (std::string(argv[i]) == "-body" && i + 1 < argc) {
+            gpioConfig.m_bodyMinRMS = std::stoi(argv[i + 1]);
+            INFO("Body RMS threshold %d", gpioConfig.m_bodyMinRMS);
+            i++;
+        }
+        if (std::string(argv[i]) == "-mouth" && i + 1 < argc) {
+            gpioConfig.m_mouthMinRMS = std::stoi(argv[i + 1]);
+            INFO("Mouth RMS threshold %d", gpioConfig.m_mouthMinRMS);
             i++;
         }
     }
 
-    if (gpio::gpio_spawn() < 0) {
-        ERROR("Failed spawning GPIO process");
+    if (gpio::gpio_spawn(gpioConfig) < 0) {
+        ERROR("Failed spawning GPIO thread");
         return -1;
     }
 
+    signal(SIGINT, sigint_handler);
+
+
     audioDriver driver = audioDriver();
     audioFile file = audioFile(fileName, timeTag);
+    signalProcessor processor = signalProcessor();
 
-    processor = new signalProcessor();
-
-    processor->setAudioDriver(&driver);
-    processor->setLPF(lpf);
-    processor->setHPF(hpf);
-    processor->setFile(&file);
+    processor.setAudioDriver(&driver);
+    processor.setLPF(lpf);
+    processor.setHPF(hpf);
+    processor.setFile(&file);
 
     do {
-        processor->update(State::PLAYING);
-    } while (processor->getState() != State::STOPPED);
+        processor.update(State::PLAYING);
+    } while (!shouldExit && processor.getState() != State::STOPPED);
+
+    INFO("Shutting down...");
 
     if (gpio::gpio_exit() < 0) {
-        ERROR("Failed to exit GPIO process");
-        return -1;
+        ERROR("Failed to terminate GPIO");
     }
 
     return 0;

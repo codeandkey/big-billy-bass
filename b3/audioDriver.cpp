@@ -65,7 +65,7 @@ int b3::audioDriver::writeAudioData(uint8_t *data, int frameCount)
     return 0;
 }
 
-int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uint8_t channels, uint64_t buffSize)
+int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uint8_t channels, uint64_t samplesPerChunk)
 {
     /**
      * Clearing up some nomenclature here becuase I got very confused and it lead to some bugs
@@ -86,6 +86,8 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     int err = 0;
     uint32_t chnls, rate, frameRate;
     uint64_t chunkSize;
+    int chunkSizeBytes;
+    
 
 #ifndef DUMMY_ALSA_DRIVERS
     if ((err = snd_pcm_open(&m_audioDevice, deviceName, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
@@ -108,7 +110,7 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     frameRate = sampleRate;
     if ((err = snd_pcm_hw_params_set_rate_near(m_audioDevice, m_hardwareParams, &frameRate, 0)) < 0)
         goto badInitCleanup;
-    if ((err = snd_pcm_hw_params_set_period_size_near(m_audioDevice, m_hardwareParams, &buffSize, 0)) < 0)
+    if ((err = snd_pcm_hw_params_set_period_size_near(m_audioDevice, m_hardwareParams, &samplesPerChunk, 0)) < 0)
         goto badInitCleanup;
     // write parameters to driver
     if ((err = snd_pcm_hw_params(m_audioDevice, m_hardwareParams)) < 0) {
@@ -126,12 +128,15 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     snd_pcm_hw_params_get_rate(m_hardwareParams, &rate, 0);
     pthread_mutex_unlock(&m_audioMutex);
 
+    chunkSizeBytes = chunkSize * chnls * signalProcessingDefaults::BYTES_PER_SAMPLE;
+
     DEBUG("Opened audio device %s", snd_pcm_name(m_audioDevice));
     DEBUG("--%d Hz (%d bps)", rate, rate * 8 * chnls * signalProcessingDefaults::BYTES_PER_SAMPLE);
-    DEBUG("--%d channels, %d frames/chunk (%d bytes)", chnls, chunkSize / chnls / signalProcessingDefaults::BYTES_PER_SAMPLE, chunkSize);
-    DEBUG("--%d ms chunks", chunkSize * 8 * 1000 / rate);
+    DEBUG("--%d channels, %d frames/chunk (%d bytes)", chnls, chunkSize, chunkSizeBytes);
+    DEBUG("--%d ms chunks", chunkSize * 1000 / signalProcessingDefaults::DEFAULT_SAMPLE_RATE);
+
 #endif 
-    return chunkSize;
+    return chunkSizeBytes;
 
 #ifndef DUMMY_ALSA_DRIVERS
 badInitCleanup:
