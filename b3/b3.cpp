@@ -15,6 +15,7 @@ extern "C" {
 #include "signalProcessing.h"
 #include "audioDriver.h"
 #include "audioFile.h"
+#include "b3Config.h"
 
 using namespace b3;
 
@@ -28,13 +29,13 @@ void sigint_handler(int _sig)
 
 int main(int argc, char **argv)
 {
-    float lpf = signalProcessingDefaults::LPF_CUTOFF_DEFAULT;
-    float hpf = signalProcessingDefaults::HPF_CUTOFF_DEFAULT;
-    uint64_t timeTag = 0;
-    char fileName[255] = "test.mp3";
+    uint64_t seekTime = 0;
+    char fileName[255];
+    snprintf(fileName, sizeof(fileName), "%s/%s", audioFileDefaults::AUDIO_FILES_PATH, audioFileDefaults::DEFAULT_FILE_NAME);
     int mouthMinRMS = 0, bodyMinRMS = 10000;
 
     gpio::GpioConfig gpioConfig;
+    b3Config globalConfig;
 
     for (int i = 0; i < argc; ++i) {
         if (std::string(argv[i]) == "-v" || std::string(argv[i]) == "--verbose") {
@@ -42,22 +43,22 @@ int main(int argc, char **argv)
             INFO("Verbose logging enabled");
         }
         if (std::string(argv[i]) == "-f" && i + 1 < argc) {
-            strncpy(fileName, argv[i + 1], sizeof(fileName));
+            snprintf(fileName, sizeof(fileName), "%s/%s", audioFileDefaults::AUDIO_FILES_PATH, argv[i + 1]);
             INFO("loading sound file: %s", argv[i + 1]);
             i++;
         }
         if (std::string(argv[i]) == "-lpf" && i + 1 < argc) {
-            lpf = std::stod(argv[i + 1]);
+            globalConfig.LPF_CUTOFF = std::stod(argv[i + 1]);
             INFO("LPF setting: %s", argv[i + 1]);
             i++;
         }
         if (std::string(argv[i]) == "-hpf" && i + 1 < argc) {
-            lpf = std::stod(argv[i + 1]);
+            globalConfig.HPF_CUTOFF = std::stod(argv[i + 1]);
             INFO("HPF setting: %s", argv[i + 1]);
             i++;
         }
         if (std::string(argv[i]) == "-seek" && i + 1 < argc) {
-            timeTag = std::stod(argv[i + 1]);
+            seekTime = std::stod(argv[i + 1]);
             INFO("Seeking to +%s seconds", argv[i + 1]);
             i++;
         }
@@ -82,15 +83,16 @@ int main(int argc, char **argv)
 
 
     audioDriver driver = audioDriver();
-    audioFile file = audioFile(fileName, timeTag);
-    signalProcessor processor = signalProcessor();
+    audioFile file = audioFile(fileName, seekTime);
+    signalProcessor processor = signalProcessor(globalConfig);
 
     processor.setAudioDriver(&driver);
-    processor.setLPF(lpf);
-    processor.setHPF(hpf);
     processor.setFile(&file);
 
     do {
+        globalConfig.poll();
+        processor.setLPF(globalConfig.LPF_CUTOFF);
+        processor.setHPF(globalConfig.HPF_CUTOFF);
         processor.update(State::PLAYING);
     } while (!shouldExit && processor.getState() != State::STOPPED);
 

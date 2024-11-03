@@ -10,8 +10,5 @@ enum State {
 	PAUSED   // There is an audio file loaded, but not playing
 };
 
-struct Options {
-	std::string filename;
-};
 
 } // namespace b3

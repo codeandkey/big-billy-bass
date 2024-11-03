@@ -33,28 +33,32 @@ void signalProcessor::update(State state)
 
         if (m_fillBuffer) {
             m_fillBuffer = false;
-            for (int i = 0; i < b3::SPD::CHUNK_COUNT - 1; i++)
+            for (int i = 0; i < m_config.BUFFER_LENGTH_MS - 1; i++)
                 _processChunk();
         }
         _processChunk();
 
         if (dt == 0) {
-            m_underRunCounter = MIN(m_underRunCounter + 1, SPD::CHUNK_COUNT);
-            if (m_underRunCounter == SPD::CHUNK_COUNT) {
+            m_underRunCounter = MIN(m_underRunCounter + 1, m_config.BUFFER_LENGTH_MS);
+            if (m_underRunCounter == m_config.BUFFER_LENGTH_MS) {
                 m_fillBuffer = true;
                 DEBUG("Possible chunk underrun likely due to process timing: %d uS", m_tm.lastLap());
             }
-        } else 
+        } else
             m_underRunCounter = MAX(m_underRunCounter - 1, 0);
-        
+
 
     }
 
-    if (m_stopCommand && m_closeFile) {
+#ifdef DEBUG_FILTER_DATA
+    if (m_closeFile) {
         fclose(m_signalDebugFile);
         m_closeFile = false;
-        setState(STOPPED);
     }
+#endif 
+
+    if (m_stopCommand)
+        setState(STOPPED);
 }
 
 
@@ -79,11 +83,13 @@ void signalProcessor::setState(State to)
         // set flags
         m_stopCommand = 0;
         m_fillBuffer = true;
-
+#ifdef DEBUG_FILTER_DATA
         m_signalDebugFile = fopen("debugLpf.bin", "wb");
         if (!m_signalDebugFile)
             WARNING("failed to open " "debugLpf.bin" ": %s", strerror(errno));
+#endif
         break;
+
 
     case State::STOPPED:
         unLoadFile();
@@ -137,7 +143,7 @@ void signalProcessor::setFile(audioFile *F)
 void signalProcessor::_negotiateChunkSize()
 {
     // this is the desired chunk size based on the audio file's settings
-    m_chunkSize = m_audioFile->chunkSizeBytes(signalProcessingDefaults::CHUNK_SIZE_MS);
+    m_chunkSize = m_audioFile->chunkSizeBytes(m_config.CHUNK_SIZE_MS);
     // see if we can set the alsa drivers to the same settings
     int chunkSizeFrames = m_chunkSize / m_audioFile->getChannels() / SPD::BYTES_PER_SAMPLE;
     DEBUG("Expected chunks size (frames/chunk) %d", chunkSizeFrames);
@@ -214,8 +220,10 @@ int signalProcessor::_processChunk()
     m_alsaDriver->writeAudioData((uint8_t *)pcm16Buff, samplesRead);
     m_tm.lap();
 
-    //if (m_signalDebugFile)
-        // fwrite(fltrSignal[biQuadFilter::LPF], sizeof(fltrSignal[0][0]), samplesRead, m_signalDebugFile);
+#ifdef DEBUG_FILTER_DATA
+    if (m_signalDebugFile)
+        fwrite(fltrSignal[biQuadFilter::LPF], sizeof(fltrSignal[0][0]), samplesRead, m_signalDebugFile);
+#endif
 
     return 0;
 }

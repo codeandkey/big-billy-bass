@@ -15,7 +15,8 @@ extern "C" {
 namespace b3 {
     namespace audioFileDefaults {
         constexpr uint8_t FILE_NAME_BUFFER_SIZE = signalProcessingDefaults::FILE_NAME_BUFFER_SIZE;
-        constexpr const char *DEFAULT_FILE_NAME = "tmp.wav";
+        constexpr const char *DEFAULT_FILE_NAME = "test.mp3";
+        constexpr const char *AUDIO_FILES_PATH = "audio";
         constexpr const float DEFAULT_NORMALIZATION_LUFS = -5.;
         constexpr AVSampleFormat __get_default_codec()
         {

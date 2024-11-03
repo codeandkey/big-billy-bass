@@ -7,6 +7,7 @@ add_executable(b3
     biQuadFilter.cpp
     audioDriver.cpp
     audioFile.cpp
+    b3Config.cpp
 )
 
 # needed for ffmpeg libs

@@ -8,9 +8,11 @@ namespace signalProcessingDefaults {
 
 
     constexpr float CHUNK_SIZE_MS = 50.; //  ms chunks
-    constexpr float BUFFER_LENGTH_S = CHUNK_SIZE_MS * 2;
+    
+    constexpr uint8_t CHUNK_COUNT = 2;
+    constexpr float BUFFER_LENGTH_MS = CHUNK_SIZE_MS * CHUNK_COUNT;
 
-    constexpr uint8_t CHUNK_COUNT = BUFFER_LENGTH_S / CHUNK_SIZE_MS;
+    
     constexpr uint8_t FILE_NAME_BUFFER_SIZE = 255;
 
     constexpr float LPF_CUTOFF_DEFAULT = 5000; // most music won't have noise above 20kHz if well mastered

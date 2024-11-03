@@ -4,6 +4,8 @@
 #include <deque>
 #include <cstring>
 
+#include "logger.h"
+
 namespace b3 {
 
 #define Q 0.707
@@ -15,7 +17,7 @@ namespace b3 {
         enum filterType {
             LPF,
             HPF,
-            
+
             _filterTypeCount
         }; // enum filterType
 
@@ -33,11 +35,21 @@ namespace b3 {
         }
 
         // setters
+#define __setter(method,input,variable)         \
+            inline void method(float input)     \
+            {                                   \
+                if (variable != input){         \
+                    variable = input;           \
+                    updateCoeffs();             \
+                    DEBUG("Updated %d filter parameter: %f", m_filterType, input);  \
+                }                                       \
+            }                           
 
-        inline void setSampleRate(float sampleRate) { m_sampleRate = sampleRate; updateCoeffs(); }
-        inline void setCutoff(float cutoff) { m_cutoff = cutoff; updateCoeffs(); }
-        inline void setQ(float q) { m_q = q; updateCoeffs(); }
-        inline void setGain(float gain) { m_gain = gain; updateCoeffs(); }
+        __setter(setSampleRate, sampleRate, m_sampleRate)
+        __setter(setQ, q, m_q)
+        __setter(setGain, gain, m_gain)
+        __setter(setCutoff, cutoff, m_cutoff)
+
 
         // updates buffers with new sample. Returns filtered sample
         float update(float sample);

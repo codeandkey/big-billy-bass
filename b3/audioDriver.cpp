@@ -18,7 +18,6 @@ void b3::audioDriver::closeDevice()
 #ifndef DUMMY_ALSA_DRIVERS
         snd_pcm_drain(m_audioDevice);
         snd_pcm_close(m_audioDevice);
-        snd_pcm_hw_params_free(m_hardwareParams);
         m_audioDevice = nullptr;
         m_hardwareParams = nullptr;
 #endif
@@ -116,7 +115,6 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     if ((err = snd_pcm_hw_params(m_audioDevice, m_hardwareParams)) < 0) {
         goto badInitCleanup;
     }
-    snd_pcm_hw_params_free(m_hardwareParams);
 
     if ((err = snd_pcm_prepare(m_audioDevice)) < 0) {
         goto badInitCleanup;
@@ -127,6 +125,7 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     snd_pcm_hw_params_get_channels(m_hardwareParams, &chnls);
     snd_pcm_hw_params_get_rate(m_hardwareParams, &rate, 0);
     pthread_mutex_unlock(&m_audioMutex);
+    snd_pcm_hw_params_free(m_hardwareParams);
 
     chunkSizeBytes = chunkSize * chnls * signalProcessingDefaults::BYTES_PER_SAMPLE;
 

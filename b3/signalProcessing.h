@@ -11,18 +11,22 @@
 #include "state.h"
 #include "biQuadFilter.h"
 #include "audioDriver.h"
+#include "b3Config.h"
 
 namespace b3 {
     namespace SPD = signalProcessingDefaults;
 
     class signalProcessor {
     public:
-        signalProcessor() :
+        signalProcessor(b3Config& conf) :
+            m_config(conf),
             m_driverLoaded(false),
             m_fillBuffer(false),
             m_stopCommand(false),
             m_fileLoaded(false),
+#ifdef DEBUG_FILTER_DATA
             m_closeFile(false),
+#endif
             m_audioFile(nullptr),
             m_underRunCounter(0),
             m_activeState(State::STOPPED),
@@ -30,9 +34,11 @@ namespace b3 {
             m_chunkTimestamp(timeManager::getUsSinceEpoch())
         {
             memset(m_filters, 0, sizeof(m_filters));
-            m_filterSettings[biQuadFilter::HPF] = SPD::HPF_CUTOFF_DEFAULT;
-            m_filterSettings[biQuadFilter::LPF] = SPD::LPF_CUTOFF_DEFAULT;
+            m_filterSettings[biQuadFilter::HPF] = conf.HPF_CUTOFF;
+            m_filterSettings[biQuadFilter::LPF] = conf.LPF_CUTOFF;
+#ifdef DEBUG_FILTER_DATA
             m_closeFile = false;
+#endif
         }
 
         ~signalProcessor();
@@ -83,7 +89,7 @@ namespace b3 {
          */
         inline void unLoadFile()
         {
-            m_fileLoaded = 0;
+            m_fileLoaded = false;
             m_audioFile = nullptr;
             for (int fltrNdx = 0; fltrNdx < biQuadFilter::_filterTypeCount; fltrNdx++)
                 delete m_filters[fltrNdx];
@@ -123,7 +129,11 @@ namespace b3 {
         // flags
         bool m_fillBuffer;
         bool m_stopCommand;
+#ifdef DEBUG_FILTER_DATA
         bool m_closeFile;
+#endif
+
+        b3Config& m_config;
 
         State m_activeState;
 
@@ -139,7 +149,8 @@ namespace b3 {
         uint64_t m_chunkTimestamp;
         uint64_t m_chunkSizeUs;
         uint16_t m_chunkSize;
-
+#ifdef DEBUG_FILTER_DATA
         FILE *m_signalDebugFile;
+#endif
     };
 };
