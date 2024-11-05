@@ -14,28 +14,23 @@ add_executable(b3
 target_link_libraries(b3 
     avformat
     avcodec
-    asound
     avutil
     swresample
 )
 
-# Uncomment to enable pigpio
-set (PIGPIO_ENABLE 1)
+if (ENABLE_ASOUND)
+    message(STATUS "Enabling ALSA audio driver")
+    target_link_libraries(b3 asound)
+else()
+    message(STATUS "Disabling ALSA audio driver")
+    target_compile_definitions(b3 PUBLIC DUMMY_ALSA_DRIVERS)
+endif()
 
-# Uncomment to disable pigpio write and warnings
-# add_compile_definitions(DISABLE_GPIO)
-
-# Uncomment to enable GPIO test
-# set (GPIO_TEST 1)
-
-if (PIGPIO_ENABLE)
-    target_compile_definitions(b3 PUBLIC ENABLE_PIGPIO)
+if (ENABLE_GPIO)
+    message(STATUS "Enabling GPIO")
+    target_compile_definitions(b3 PUBLIC ENABLE_GPIO)
     target_link_libraries(b3 pigpio)
+else()
+    message(STATUS "Disabling GPIO")
+    target_compile_definitions(b3 PUBLIC DISABLE_GPIO)
 endif()
-
-if (GPIO_TEST)
-    target_compile_definitions(b3 PUBLIC GPIO_TEST)
-endif()
-
-# Comment to disable audio override
-target_compile_definitions(b3 PUBLIC TEST_AUDIO="test.mp3")

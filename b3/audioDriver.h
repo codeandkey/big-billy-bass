@@ -6,7 +6,7 @@ extern "C" {
 #include <pthread.h>
 
 #ifndef DUMMY_ALSA_DRIVERS
-# include <alsa/asoundlib.h>
+#include <alsa/asoundlib.h>
 #endif
 }
 #include "signalProcessingDefaults.h"

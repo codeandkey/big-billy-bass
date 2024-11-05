@@ -211,7 +211,7 @@ int signalProcessor::_processChunk()
 
     // GPIO API call
 #ifndef DISABLE_GPIO
-    gpio::gpio_submitChunk(fltrSignal[biQuadFilter::LPF], fltrSignal[biQuadFilter::HPF], samplesRead);
+    GPIO::submitFrame(fltrSignal[biQuadFilter::LPF], fltrSignal[biQuadFilter::HPF], samplesRead);
 #endif
     m_chunkTimestamp += m_chunkSizeUs;
     // usleep(100000);

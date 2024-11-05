@@ -15,6 +15,7 @@ namespace b3 {
         constexpr const char *DEFAULT_CONFIG_PATH = "config/b3.ini";
         constexpr float DEFAULT_BODY_THRESHOLD = 10000;
         constexpr float DEFAULT_MOUTH_THRESHOLD = 10000;
+        constexpr float DEFAULT_RMS_WINDOW_MS = 250;
 
         constexpr int DEFAULT_CONFIG_FILE_NAME_SIZE = 255;
     };
@@ -30,7 +31,8 @@ namespace b3 {
             CHUNK_COUNT(signalProcessingDefaults::CHUNK_COUNT),
             BUFFER_LENGTH_MS(signalProcessingDefaults::BUFFER_LENGTH_MS),
             BODY_THRESHOLD(configDefaults::DEFAULT_BODY_THRESHOLD),
-            MOUTH_THRESHOLD(configDefaults::DEFAULT_MOUTH_THRESHOLD)
+            MOUTH_THRESHOLD(configDefaults::DEFAULT_MOUTH_THRESHOLD),
+            RMS_WINDOW_MS(configDefaults::DEFAULT_RMS_WINDOW_MS)
         {
             init();
         }
@@ -46,7 +48,7 @@ namespace b3 {
         int BODY_THRESHOLD;
         int MOUTH_THRESHOLD;
         int CHUNK_COUNT;
-
+        int RMS_WINDOW_MS;
 
     private:
 

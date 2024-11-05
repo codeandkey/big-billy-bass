@@ -16,6 +16,7 @@ namespace configVars {
     constexpr const char *HPF = "hpf_cutoff";
     constexpr const char *BODY_THRESHOLD = "body_threshold";
     constexpr const char *MOUTH_THRESHOLD = "mouth_threshold";
+    constexpr const char *RMS_WINDOW_MS = "rms_window_ms";
     constexpr const char *CHUNK_SIZE_MS = "chunk_size_ms";
     constexpr const char *BUFFER_COUNT = "buffer_count";
 
@@ -30,6 +31,7 @@ namespace configVars {
         {CHUNK_SIZE_MS,     [](b3Config &cfg, std::string value) {assignFloat(cfg.CHUNK_SIZE_MS, value);}},
         {BODY_THRESHOLD,    [](b3Config &cfg, std::string value) {assignInt(cfg.BODY_THRESHOLD, value);}},
         {MOUTH_THRESHOLD,   [](b3Config &cfg, std::string value) {assignInt(cfg.BODY_THRESHOLD, value);}},
+        {RMS_WINDOW_MS,     [](b3Config &cfg, std::string value) {assignInt(cfg.RMS_WINDOW_MS, value);}},
         {BUFFER_COUNT,      [](b3Config &cfg, std::string value) {assignInt(cfg.CHUNK_COUNT, value);}}
     };
 };
