@@ -13,9 +13,9 @@ float biQuadFilter::update(float sample)
 
 
     float y = 0;
-    for (int i = 0; i < m_x.size(); i++)
+    for (size_t i = 0; i < m_x.size(); i++)
         y += m_x[i] * b[i];
-    for (int i = 0;i < m_y.size(); i++)
+    for (size_t i = 0;i < m_y.size(); i++)
         y -= m_y[i] * a[i];
 
     m_y.push_front(y);
@@ -56,6 +56,9 @@ void biQuadFilter::updateCoeffs()
         a0 = 1 + alpha;
         a1 = -2 * cos(w0);
         a2 = 1 - alpha;
+        break;
+    case _filterTypeCount:
+        ERROR("INVALID FILTER TYPE FILTER TYPE COUNT!!");
         break;
     }
 

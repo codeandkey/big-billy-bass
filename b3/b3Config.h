@@ -24,15 +24,16 @@ namespace b3 {
     class b3Config {
     public:
         b3Config() :
-            m_configFileOpen(false),
-            HPF_CUTOFF(signalProcessingDefaults::LPF_CUTOFF_DEFAULT),
             LPF_CUTOFF(signalProcessingDefaults::HPF_CUTOFF_DEFAULT),
+            HPF_CUTOFF(signalProcessingDefaults::LPF_CUTOFF_DEFAULT),
             CHUNK_SIZE_MS(signalProcessingDefaults::CHUNK_SIZE_MS),
-            CHUNK_COUNT(signalProcessingDefaults::CHUNK_COUNT),
             BUFFER_LENGTH_MS(signalProcessingDefaults::BUFFER_LENGTH_MS),
             BODY_THRESHOLD(configDefaults::DEFAULT_BODY_THRESHOLD),
             MOUTH_THRESHOLD(configDefaults::DEFAULT_MOUTH_THRESHOLD),
-            RMS_WINDOW_MS(configDefaults::DEFAULT_RMS_WINDOW_MS)
+            CHUNK_COUNT(signalProcessingDefaults::CHUNK_COUNT),
+            RMS_WINDOW_MS(configDefaults::DEFAULT_RMS_WINDOW_MS),
+            SEEK_TIME(0),
+            m_configFileOpen(false)
         {
             init();
         }
@@ -49,6 +50,7 @@ namespace b3 {
         int MOUTH_THRESHOLD;
         int CHUNK_COUNT;
         int RMS_WINDOW_MS;
+        uint64_t SEEK_TIME;
 
     private:
 
@@ -61,6 +63,7 @@ namespace b3 {
 
         __printer(printVar, int, "%d")
         __printer(printVar, float, "%f")
+        __printer(printVar, uint64_t, "%lu");
 
         inline void setComment(const char *comment)
         {

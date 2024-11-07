@@ -1,4 +1,6 @@
 #include <string>
+#include <csignal>
+
 
 extern "C" {
 #include <unistd.h>
@@ -71,6 +73,8 @@ int main(int argc, char **argv)
         }
     }
 
+    globalConfig.printSettings();
+
     GPIO gpio = GPIO(&globalConfig);
     gpio.start(sigintHandler);
 
@@ -89,6 +93,9 @@ int main(int argc, char **argv)
     } while (!shouldExit && processor.getState() != State::STOPPED);
 
     INFO("Shutting down...");
+
+    globalConfig.SEEK_TIME = file.getCurrentTimestampUs();
+    globalConfig.printSettings();
 
     gpio.stop();
     return 0;

@@ -95,8 +95,10 @@ void signalProcessor::setState(State to)
         unLoadFile();
         m_alsaDriver->closeDevice();
         break;
-    }
+    case State::PAUSED:
+        break; // no longer does anything
 
+    }
     INFO("SignalProcessor State Transition: %d\n", m_activeState, to);
     m_activeState = to;
 }

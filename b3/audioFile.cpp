@@ -74,17 +74,18 @@ int b3::audioFile::openFile(const char *fileName)
         0, nullptr
     );
 
+    m_fileOpen = true;
     DEBUG("Resampler Settings:");
     DEBUG("--sample rate: %d", getSampleRate());
 
     // seek to timetag
-    if (av_seek_frame(m_formatContext, m_streamIndx, m_seekTimeTag * AV_TIME_BASE, AVSEEK_FLAG_BACKWARD))
+    if (av_seek_frame(m_formatContext, m_streamIndx, m_seekTimeTag, AVSEEK_FLAG_BACKWARD) < 0)
         ERROR("Failed to seek to %llu", m_seekTimeTag);
 
     m_frame = av_frame_alloc();
 
     strncpy(m_audioFileName, fileName, audioFileDefaults::FILE_NAME_BUFFER_SIZE);
-    m_fileOpen = true;
+
 
     pthread_mutex_unlock(&m_fileMutex);
     return 0;
@@ -195,14 +196,13 @@ int b3::audioFile::_readFrame(AVFrame *frame)
 
 
     int ret;
-    bool readAchieved = false;
     AVPacket *packet = av_packet_alloc();
     AVFrame *tempFrame = av_frame_alloc();
 
     av_new_packet(packet, 0);
 
     // get most current frame
-    for (int pckCnt = 0; pckCnt < m_formatContext->nb_streams; pckCnt++) {
+    for (uint pckCnt = 0; pckCnt < m_formatContext->nb_streams; pckCnt++) {
         if ((ret = av_read_frame(m_formatContext, packet)) < 0) {
             if (ret == AVERROR_EOF)
                 INFO("Decoder detected EOF");
@@ -235,6 +235,8 @@ int b3::audioFile::_readFrame(AVFrame *frame)
         // continue;
     } else if (ret == AVERROR_EOF) {
         DEBUG("Decoder reached end of file");
+        // reset timestamp
+        m_currentTimeTagUs = 0;
         goto errorCleanup;
     } else if (ret < 0) {
         WARNING("Failed to receive frame from decoder");
@@ -247,12 +249,17 @@ int b3::audioFile::_readFrame(AVFrame *frame)
     frame->sample_rate = tempFrame->sample_rate;
     frame->ch_layout = tempFrame->ch_layout;
     frame->format = audioFileDefaults::DEFAULT_DECODER_FORMAT;
+    
+    m_currentTimeTagUs = tempFrame->pts;
 
     ret = swr_convert_frame(m_swrContext, frame, tempFrame);
     if (ret < 0) {
         ERROR("Failed to convert frame");
         goto errorCleanup;
     }
+
+
+
     av_frame_free(&tempFrame);
     av_packet_free(&packet);
 
@@ -281,8 +288,8 @@ int b3::audioFile::chunkSizeBytes(float chunkSizeMs) const
     return getSampleRate()                                                      // [frames / second]
         * getChannels()                                                         // [channels / frame]
         * chunkSizeMs                                                           // [seconds / chunk]
-        * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT)    
-        / 1000;                                                                 
+        * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT)
+        / 1000;
 }
 
 int b3::audioFile::getSampleRate() const

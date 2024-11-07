@@ -18,20 +18,27 @@ namespace b3 {
 
     class signalProcessor {
     public:
-        signalProcessor(b3Config& conf) :
-            m_config(conf),
+        signalProcessor(b3Config &conf) :
+            m_fileLoaded(false),
             m_driverLoaded(false),
             m_fillBuffer(false),
             m_stopCommand(false),
-            m_fileLoaded(false),
+
 #ifdef DEBUG_FILTER_DATA
             m_closeFile(false),
 #endif
-            m_audioFile(nullptr),
-            m_underRunCounter(0),
+            m_config(conf),
             m_activeState(State::STOPPED),
+            m_audioFile(nullptr),
             m_alsaDriver(nullptr),
-            m_chunkTimestamp(timeManager::getUsSinceEpoch())
+            m_underRunCounter(0),
+            m_chunkTimestamp(timeManager::getUsSinceEpoch()),
+            m_chunkSizeUs(0),
+            m_chunkSize(0)
+#ifdef DEBUG_FILTER_DATA
+            ,
+            m_signalDebugFile(nullptr)
+#endif
         {
             memset(m_filters, 0, sizeof(m_filters));
             m_filterSettings[biQuadFilter::HPF] = conf.HPF_CUTOFF;
@@ -53,7 +60,7 @@ namespace b3 {
 
         // getters / setters
 
-        inline State getState() const { return m_activeState;}
+        inline State getState() const { return m_activeState; }
 
         /**
          * @brief Sets processor state.
@@ -106,9 +113,9 @@ namespace b3 {
         }             
 
         __setFilter(setLPF, biQuadFilter::LPF)
-        __setFilter(setHPF, biQuadFilter::HPF)
+            __setFilter(setHPF, biQuadFilter::HPF)
 
-        uint64_t usToNextChunk();
+            uint64_t usToNextChunk();
 
     private:
 
@@ -133,7 +140,7 @@ namespace b3 {
         bool m_closeFile;
 #endif
 
-        b3Config& m_config;
+        b3Config &m_config;
 
         State m_activeState;
 

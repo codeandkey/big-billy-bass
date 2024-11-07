@@ -19,20 +19,23 @@ namespace configVars {
     constexpr const char *RMS_WINDOW_MS = "rms_window_ms";
     constexpr const char *CHUNK_SIZE_MS = "chunk_size_ms";
     constexpr const char *BUFFER_COUNT = "buffer_count";
+    constexpr const char *SEEK_TIME = "seek_time";
 
 
 
     std::function<void(int &, std::string)> assignInt = [](int &i, std::string value) {i = std::stoi(value);};
     std::function<void(float &, std::string)> assignFloat = [](float &f, std::string value) {f = std::stof(value);};
+    std::function<void(uint64_t &, std::string)> assignU64 = [](uint64_t &i, std::string value) {i = std::stoull(value);};
 
     std::unordered_map<std::string, std::function<void(b3Config &, std::string)>> g_configMap = {
         {LPF,               [](b3Config &cfg, std::string value) {assignFloat(cfg.LPF_CUTOFF, value);}},
         {HPF,               [](b3Config &cfg, std::string value) {assignFloat(cfg.HPF_CUTOFF, value);}},
         {CHUNK_SIZE_MS,     [](b3Config &cfg, std::string value) {assignFloat(cfg.CHUNK_SIZE_MS, value);}},
         {BODY_THRESHOLD,    [](b3Config &cfg, std::string value) {assignInt(cfg.BODY_THRESHOLD, value);}},
-        {MOUTH_THRESHOLD,   [](b3Config &cfg, std::string value) {assignInt(cfg.BODY_THRESHOLD, value);}},
+        {MOUTH_THRESHOLD,   [](b3Config &cfg, std::string value) {assignInt(cfg.MOUTH_THRESHOLD, value);}},
         {RMS_WINDOW_MS,     [](b3Config &cfg, std::string value) {assignInt(cfg.RMS_WINDOW_MS, value);}},
-        {BUFFER_COUNT,      [](b3Config &cfg, std::string value) {assignInt(cfg.CHUNK_COUNT, value);}}
+        {BUFFER_COUNT,      [](b3Config &cfg, std::string value) {assignInt(cfg.CHUNK_COUNT, value);}},
+        {SEEK_TIME,         [](b3Config &cfg, std::string value) {assignU64(cfg.SEEK_TIME, value);}}
     };
 };
 
@@ -94,7 +97,7 @@ void b3::b3Config::printSettings()
     bool tmpConfigOpen = m_configFileOpen;
     if (tmpConfigOpen)
         fclose(m_configFile);
-    
+
     m_configFile = fopen(configDefaults::DEFAULT_CONFIG_PATH, "w");
 
     if (!m_configFile) {
@@ -108,8 +111,10 @@ void b3::b3Config::printSettings()
     printVar(configVars::BODY_THRESHOLD, BODY_THRESHOLD);
     printVar(configVars::MOUTH_THRESHOLD, MOUTH_THRESHOLD);
     printVar(configVars::BUFFER_COUNT, CHUNK_COUNT);
+    printVar(configVars::RMS_WINDOW_MS, RMS_WINDOW_MS);
     setComment("The following parameters are loaded at the beginning of the program and do not update");
     printVar(configVars::CHUNK_SIZE_MS, CHUNK_SIZE_MS);
+    printVar(configVars::SEEK_TIME, SEEK_TIME);
     m_configFileOpen = tmpConfigOpen;
 
     // open file back up in read only

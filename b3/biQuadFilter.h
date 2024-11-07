@@ -23,12 +23,12 @@ namespace b3 {
 
 
         biQuadFilter(float sampleRate, float cutoff, float q, float gain, filterType type) :
+            m_x(biQuadFilter::FF),
+            m_y(biQuadFilter::FB),
             m_sampleRate(sampleRate),
             m_cutoff(cutoff),
             m_q(q),
             m_gain(gain),
-            m_x(biQuadFilter::FF),
-            m_y(biQuadFilter::FB),
             m_filterType(type)
         {
             updateCoeffs();

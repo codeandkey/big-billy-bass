@@ -51,7 +51,7 @@ int b3::audioDriver::writeAudioData(uint8_t *data, int frameCount)
         if (ret == -EPIPE)
             WARNING("Audio buffer underrun");
         else if (ret < 0)
-            ERROR("Failed to write audio data %s:", snd_strerror(ret));
+            ERROR("Failed to write audio data %s", snd_strerror(ret));
 
         if (ret < 0) {
             snd_pcm_recover(m_audioDevice, ret, 0);
