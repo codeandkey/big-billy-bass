@@ -6,6 +6,8 @@ extern "C" {
 #include <cassert>
 
 #include "logger.h"
+#include "sighandler.h"
+#include "timeManager.h"
 
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -16,14 +18,14 @@ b3::audioFile::~audioFile()
 }
 
 
-int b3::audioFile::openFile(const char *fileName)
+int b3::audioFile::openFile(const char *fileName, uint64_t timetag)
 {
     pthread_mutex_lock(&m_fileMutex);
 
 
     // open the file
     if (avformat_open_input(&m_formatContext, fileName, nullptr, nullptr) < 0) {
-        WARNING("Failed to open file: %s", fileName);
+        ERROR("Failed to open file: %s", fileName);
         goto openFileErrorCleanup;
     }
     DEBUG("Opened %s", fileName);
@@ -79,8 +81,8 @@ int b3::audioFile::openFile(const char *fileName)
     DEBUG("--sample rate: %d", getSampleRate());
 
     // seek to timetag
-    if (av_seek_frame(m_formatContext, m_streamIndx, m_seekTimeTag, AVSEEK_FLAG_BACKWARD) < 0)
-        ERROR("Failed to seek to %llu", m_seekTimeTag);
+    if (av_seek_frame(m_formatContext, m_streamIndx, timetag, AVSEEK_FLAG_BACKWARD) < 0)
+        ERROR("Failed to seek to %llu", timetag);
 
     m_frame = av_frame_alloc();
 
@@ -98,6 +100,7 @@ openFileErrorCleanup:
 
 void b3::audioFile::closeFile()
 {
+    timeManager tm;
     pthread_mutex_lock(&m_fileMutex);
     if (m_fileOpen) {
         if (m_decoderContext) {
@@ -120,6 +123,7 @@ void b3::audioFile::closeFile()
         m_streamIndx = -1;
         m_fileOpen = false;
     }
+    
 
     // debug checks
     assert(m_decoderContext == nullptr);
@@ -130,6 +134,7 @@ void b3::audioFile::closeFile()
     assert(m_audioFileName[0] == '\0');
     assert(!m_fileOpen);
     pthread_mutex_unlock(&m_fileMutex);
+    DEBUG("closeFile(): %llu",tm.lap());
 }
 
 
@@ -158,7 +163,7 @@ int b3::audioFile::readChunk(uint8_t *buffer, int readSize)
 
         samplesStored += copysize;
         m_frameSampleNdx = ((m_frameSampleNdx + copysize) % (frameSize));
-    } while (samplesStored < readSize);
+    } while (samplesStored < readSize && !signalHandler::g_shouldExit);
 
     pthread_mutex_unlock(&m_fileMutex);
 
@@ -246,10 +251,9 @@ int b3::audioFile::_readFrame(AVFrame *frame)
     av_frame_unref(frame);
 
     // convert frame to the data we like
-    frame->sample_rate = tempFrame->sample_rate;
+    frame->sample_rate = signalProcessingDefaults::DEFAULT_SAMPLE_RATE;
     frame->ch_layout = tempFrame->ch_layout;
     frame->format = audioFileDefaults::DEFAULT_DECODER_FORMAT;
-    
     m_currentTimeTagUs = tempFrame->pts;
 
     ret = swr_convert_frame(m_swrContext, frame, tempFrame);
@@ -257,9 +261,6 @@ int b3::audioFile::_readFrame(AVFrame *frame)
         ERROR("Failed to convert frame");
         goto errorCleanup;
     }
-
-
-
     av_frame_free(&tempFrame);
     av_packet_free(&packet);
 

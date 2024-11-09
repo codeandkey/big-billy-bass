@@ -7,9 +7,8 @@
 #include "gpio.h"
 #include "audioFile.h"
 #include "logger.h"
+#include "sighandler.h"
 
-
-#define PCM_STEREO_TO_MONO(buffer, ndx)  (buffer[ndx] + buffer[ndx+1])/2
 
 #define MIN(a,b) (((a) < (b)) ? (a) : (b))
 #define MAX(a,b) (((a) > (b)) ? (a) : (b))
@@ -26,6 +25,10 @@ void signalProcessor::update(State state)
     if (m_activeState != state)
         setState(state);
 
+    // update filters
+    setHPF(m_config.HPF_CUTOFF);
+    setLPF(m_config.LPF_CUTOFF);
+
     if (m_activeState == State::PLAYING && !m_stopCommand) {
 
         uint64_t dt = usToNextChunk();
@@ -39,7 +42,7 @@ void signalProcessor::update(State state)
         _processChunk();
 
         if (dt == 0) {
-            m_underRunCounter = MIN(m_underRunCounter + 1, m_config.BUFFER_LENGTH_MS);
+            m_underRunCounter = MIN(m_underRunCounter + 1, m_config.CHUNK_COUNT);
             if (m_underRunCounter == m_config.BUFFER_LENGTH_MS) {
                 m_fillBuffer = true;
                 DEBUG("Possible chunk underrun likely due to process timing: %d uS", m_tm.lastLap());
@@ -124,7 +127,10 @@ void signalProcessor::setFile(audioFile *F)
         WARNING("File Already Loaded, Unloading previous audio file");
         unLoadFile();
     }
-    assert(F->getSampleRate() == SPD::DEFAULT_SAMPLE_RATE);
+    if (F->getSampleRate() != SPD::DEFAULT_SAMPLE_RATE)
+        ERROR("File sample rate error: expected %d but got %f", signalProcessingDefaults::DEFAULT_SAMPLE_RATE, F->getSampleRate());
+
+    // assert(F->getSampleRate() == SPD::DEFAULT_SAMPLE_RATE);
 
     m_audioFile = F;
     m_fileLoaded = true;
@@ -194,6 +200,8 @@ int signalProcessor::_processChunk()
     // read PCM16 data from the audio file
     int bytesRead = m_audioFile->readChunk((uint8_t *)pcm16Buff, m_chunkSize);
 
+    if (signalHandler::g_shouldExit)
+        return 0;
 
     // check for eof
     if (m_chunkSize == 0 || bytesRead < m_chunkSize || bytesRead == AVERROR_EOF) {
@@ -202,12 +210,13 @@ int signalProcessor::_processChunk()
         if (bytesRead <= 0)
             return 0;
     }
+
     int samplesRead = bytesRead / SPD::BYTES_PER_SAMPLE / channels;
 
     for (int i = 0; i < (samplesRead * channels) - 1; i += channels) {
         // convert stereo to mono, apply filters
         for (int fltrNdx = 0; fltrNdx < biQuadFilter::_filterTypeCount; fltrNdx++)
-            fltrSignal[fltrNdx][i / channels] = m_filters[fltrNdx]->update((float)PCM_STEREO_TO_MONO(pcm16Buff, i));
+            fltrSignal[fltrNdx][i / channels] = m_filters[fltrNdx]->update((float)convertPcm16BuffToMono(&pcm16Buff[i], channels));
 
     }
 

@@ -2,6 +2,7 @@
 
 #include "logger.h"
 #include "timeManager.h"
+#include "sighandler.h"
 
 #ifdef ENABLE_GPIO
 #include <pigpio.h>
@@ -12,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 
 extern "C" {
 #include <signal.h>
@@ -24,18 +26,16 @@ using namespace std;
 // Service instance
 static GPIO* g_gpioService;
 
-GPIO::GPIO(b3Config* config) : m_config(config), m_running(false) {
+GPIO::GPIO(b3Config* config) : m_config(config),
+                               m_thread(nullptr),
+                               m_running(false),
+                               m_pinWriteCount(0) {
     assert(!g_gpioService);
     g_gpioService = this;
+    m_lastDebugUs = timeManager::getUsSinceEpoch();
 }
 
 GPIO::~GPIO() {
-    _flushPins();
-
-#ifdef ENABLE_GPIO
-    gpioTerminate();
-#endif
-
     assert(g_gpioService);
     g_gpioService = nullptr;
 }
@@ -44,7 +44,7 @@ void GPIO::start(void (*sigintHandler)(int)) {
     assert(!m_thread);
 
     m_running = true;
-    m_thread = new thread([&]() {
+    m_thread = new thread([=]() {
         int ret = _threadMain(sigintHandler);
 
         const char* fmt = "GPIO thread terminated with status %d";
@@ -72,6 +72,8 @@ void GPIO::submitFrame(defaults::Sample* lpf, defaults::Sample* hpf, int n_sampl
 
     lock_guard<mutex> lock(g_gpioService->m_frameQueueMutex);
     g_gpioService->m_frameQueue.emplace(lpf, hpf, n_samples);
+
+    //DEBUG("Submitted at %.2f, queue=%d", (float) timeManager::getUsSinceEpoch() / 1000000.0f, g_gpioService->m_frameQueue.size());
 }
 
 int GPIO::_threadMain(void (*sigintHandler)(int)) {
@@ -89,7 +91,7 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
     }
 
     if (m_gpioInitialized) {
-        uint8_t fail = _enumPins([&](int pin) -> uint8_t {
+        uint8_t fail = _enumPins([](int pin) -> uint8_t {
             if (gpioSetMode(pin, PI_OUTPUT) < 0) {
                 ERROR("Failed to set pin %d mode: %s", pin, strerror(errno));
                 return 1;
@@ -113,6 +115,8 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = sigintHandler;
 
+    //signal(SIGINT, sigintHandler);
+
     if (sigaction(SIGINT, &sa, NULL) < 0) {
         ERROR("Failed installing SIGINT handler: %s", strerror(errno));
         return errno;
@@ -123,7 +127,7 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
     INFO("GPIO ready for frames");
     m_currentFrameStartUs = timeManager::getUsSinceEpoch();
 
-    while (m_running.load()) {
+    while (m_running.load() && !signalHandler::g_shouldExit) {
         // Pull frame from queue, or reset timing if empty
         Frame currentFrame;
         {
@@ -144,7 +148,7 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
             m_frameQueue.pop();
 
             if (timingReset) {
-                INFO("GPIO resuming stream");
+                INFO("GPIO resuming stream (%d buf)", m_frameQueue.size());
                 timingReset = false;
             }
         }
@@ -166,6 +170,13 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
     }
 
     _flushPins();
+
+    #ifdef ENABLE_GPIO
+        if (m_gpioInitialized) {
+            gpioTerminate();
+        }
+    #endif
+
     return 0;
 }
 
@@ -173,8 +184,13 @@ void GPIO::_processFrame(const Frame& frame) {
     bool skippedFrame = true;
     int rmsLpf = 0, rmsHpf = 0;
 
-    while (1) {
+    m_currentFrameStartUs = timeManager::getUsSinceEpoch();
+
+
+    while (!signalHandler::g_shouldExit) {
         uint64_t now = timeManager::getUsSinceEpoch();
+
+        //DEBUG("frame us %d", now - m_currentFrameStartUs);
 
         rmsLpf = _computeRMS(now, frame, true);
         rmsHpf = _computeRMS(now, frame, false);
@@ -199,13 +215,15 @@ int GPIO::_computeRMS(uint64_t now, const Frame& frame, bool lpf) {
         (now - m_currentFrameStartUs) * defaults::SAMPLE_RATE / 1000000;
     int window = m_config->RMS_WINDOW_MS * defaults::SAMPLE_RATE / 1000;
     int count = cursor;
-    int sum = 0;
+    uint64_t sum = 0;
+
+    //DEBUG("RMS cursor %d for time %d", now - m_currentFrameStartUs);
 
     const std::vector<defaults::Sample>& samples = lpf ? frame.lpf : frame.hpf;
     const std::vector<defaults::Sample>& lastSamples =
         lpf ? m_previousFrame.lpf : m_previousFrame.hpf;
 
-    if (count <= 0 || count >= int(frame.lpf.size())) {
+    if (count < 0 || count >= int(frame.lpf.size())) {
         return -1;
     }
 
@@ -220,11 +238,13 @@ int GPIO::_computeRMS(uint64_t now, const Frame& frame, bool lpf) {
             continue;
         }
 
-        sum += lastSamples[i] * lastSamples[i];
+        sum += lastSamples[idx] * lastSamples[idx];
         count += 1;
     }
+    
+    //DEBUG("RMS %s, %lu count, %lu sum, %lu (sum / count), %.2f sqrt(sum /count)", lpf ? "LPF" : "HPF", count, sum, sum / count, sqrt((float) sum / (float) count));
 
-    return sqrt(sum / count);
+    return sqrt((float) sum / (float) count);
 }
 
 uint8_t GPIO::_enumPins(uint8_t (*callback)(int)) {
@@ -239,7 +259,7 @@ uint8_t GPIO::_enumPins(uint8_t (*callback)(int)) {
 void GPIO::_flushPins() {
 #ifdef ENABLE_GPIO
     if (m_gpioInitialized) {
-        _enumPins([](int pin) { gpioWrite(pin, 0); });
+        _enumPins([](int pin) -> uint8_t { gpioWrite(pin, 0); return 0; });
         DEBUG("GPIO pins flushed");
     }
 #endif
@@ -253,8 +273,14 @@ void GPIO::_writeGPIO(int rmsLpf, int rmsHpf) {
 
     static int flip;
     static int consecutiveLow;
+    constexpr int flipSeconds = 2;
+
+    //DEBUG("writeGPIO handling [%d %d] vs threshold [%d %d]", rmsLpf, rmsHpf, m_config->BODY_THRESHOLD, m_config->MOUTH_THRESHOLD);
+
     int move_body = rmsLpf > m_config->BODY_THRESHOLD;
     int move_mouth = rmsHpf > m_config->MOUTH_THRESHOLD;
+    uint64_t now = timeManager::getUsSinceEpoch();
+    static uint64_t lastFlip = now;
 
     if (move_body) {
         if (flip) {
@@ -271,8 +297,14 @@ void GPIO::_writeGPIO(int rmsLpf, int rmsHpf) {
         gpioPWM(defaults::PIN_BODY_SPEED, 0);
         ++consecutiveLow;
 
-        if (consecutiveLow > (defaults::SAMPLE_RATE / 20)) {
-            flip = (now / 1000000) % 4 < 2;
+        //DEBUG("Consecutive low %d vs %d (%d / 40)", consecutiveLow, defaults::SAMPLE_RATE / 80, defaults::SAMPLE_RATE);
+
+        if (consecutiveLow > (defaults::SAMPLE_RATE / 80)) {
+            if ((now - lastFlip) / 1000000 > flipSeconds) {
+                flip ^= 1;
+                lastFlip = now;
+            }
+            //DEBUG("Performing flip %d", flip);
         }
     }
 

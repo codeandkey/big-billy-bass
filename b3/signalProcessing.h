@@ -102,6 +102,11 @@ namespace b3 {
                 delete m_filters[fltrNdx];
         }
 
+        uint64_t usToNextChunk();
+
+
+    private:
+
 
 #define __setFilter(setter, accessor)                                   \
         inline void setter(float cutoff)                                \
@@ -113,12 +118,16 @@ namespace b3 {
         }             
 
         __setFilter(setLPF, biQuadFilter::LPF)
-            __setFilter(setHPF, biQuadFilter::HPF)
+        __setFilter(setHPF, biQuadFilter::HPF)
 
-            uint64_t usToNextChunk();
 
-    private:
-
+        int16_t convertPcm16BuffToMono(int16_t *inBuff, int16_t channels)
+        {
+            int sum = 0;
+            for (int i = 0; i < channels; i++)
+                sum += inBuff[i];
+            return sum / channels;
+        }
 
         /**
          * @brief

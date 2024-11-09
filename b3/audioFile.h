@@ -47,34 +47,16 @@ namespace b3 {
             m_frameSampleNdx(0),
             m_fileOpen(false),
             m_packetSent(false),
-            m_seekTimeTag(0),
             m_currentTimeTagUs(0)
         {
             m_audioFileName[0] = '\0';
             pthread_mutex_init(&m_fileMutex, nullptr);
         }
 
-        audioFile(char *fileName, uint64_t timetag) :
-            m_formatContext(nullptr),
-            m_decoderContext(nullptr),
-            m_swrContext(nullptr),
-            m_decoder(nullptr),
-            m_frame(nullptr),
-            m_streamIndx(-1),
-            m_frameSampleNdx(0),
-            m_fileOpen(false),
-            m_packetSent(false),
-            m_seekTimeTag(timetag),
-            m_currentTimeTagUs(0)
-        {
-            m_audioFileName[0] = '\0';
-            pthread_mutex_init(&m_fileMutex, nullptr);
-            openFile(fileName);
-        }
         ~audioFile();
 
 
-        int openFile(const char *fileName);
+        int openFile(const char *fileName, uint64_t timetag);
 
         /**
          * @brief Closes the active audio file (if open). Function is thread safe.
@@ -195,7 +177,6 @@ namespace b3 {
         int m_frameSampleNdx;
         bool m_fileOpen;
         bool m_packetSent;
-        uint64_t m_seekTimeTag;
         uint64_t m_currentTimeTagUs;
 
         pthread_mutex_t m_fileMutex;

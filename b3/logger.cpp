@@ -7,7 +7,7 @@
 #include <pthread.h>
 #include <stdio.h>
 
-#include <chrono>
+#include <chrono>       
 #include <ctime>
 #include <cstdarg>
 
@@ -105,14 +105,20 @@ void _logger::log(LogLevel level, const char *file, int line, const char *func, 
         pthread_mutex_init(&g_logMutex, nullptr);
         g_mutexInitialized = true;
     }
+    // Get the current time as a time_point
+    auto now = std::chrono::system_clock::now();
 
-    std::time_t now = std::time(nullptr);
-    std::tm *now_tm = std::localtime(&now);
+    // Convert to time_t for strftime formatting
+    std::time_t now_time_t = std::chrono::system_clock::to_time_t(now);
+    std::tm *now_tm = std::localtime(&now_time_t);
+
+    // Get milliseconds from the time_point
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
     pthread_mutex_lock(&g_logMutex);
     char buffer[80];
     std::strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", now_tm);
-    printf("[%s] ", buffer);
+    printf("[%s.%03d] ", buffer, static_cast<int>(ms.count()));
     va_list args;
     va_start(args, message);
     switch (level) {

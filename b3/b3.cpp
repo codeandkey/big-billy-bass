@@ -1,5 +1,4 @@
 #include <string>
-#include <csignal>
 
 
 extern "C" {
@@ -14,19 +13,12 @@ extern "C" {
 #include "audioDriver.h"
 #include "audioFile.h"
 #include "b3Config.h"
+#include "sighandler.h"
 
 using namespace b3;
 using namespace std;
 
-volatile int shouldExit;
 
-void sigintHandler(int sig)
-{
-    if (sig == SIGINT) {
-        INFO("SIGINT received, shutting down..");
-        shouldExit = 1;
-    }
-}
 
 int main(int argc, char **argv)
 {
@@ -76,21 +68,23 @@ int main(int argc, char **argv)
     globalConfig.printSettings();
 
     GPIO gpio = GPIO(&globalConfig);
-    gpio.start(sigintHandler);
+    gpio.start(signalHandler::sigintHandler);
 
     audioDriver driver = audioDriver();
-    audioFile file = audioFile(fileName, seekTime);
+    audioFile file = audioFile();
     signalProcessor processor = signalProcessor(globalConfig);
 
+    if (file.openFile(fileName, seekTime) != 0){
+        INFO("Failed to open %s, exiting...",fileName);
+        return -1;
+    }
     processor.setAudioDriver(&driver);
     processor.setFile(&file);
 
     do {
         globalConfig.poll();
-        processor.setLPF(globalConfig.LPF_CUTOFF);
-        processor.setHPF(globalConfig.HPF_CUTOFF);
         processor.update(State::PLAYING);
-    } while (!shouldExit && processor.getState() != State::STOPPED);
+    } while (!signalHandler::g_shouldExit && processor.getState() != State::STOPPED);
 
     INFO("Shutting down...");
 
@@ -98,5 +92,7 @@ int main(int argc, char **argv)
     globalConfig.printSettings();
 
     gpio.stop();
+
+    DEBUG("Have a nice day :)");
     return 0;
 }

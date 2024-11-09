@@ -8,6 +8,7 @@ add_executable(b3
     audioDriver.cpp
     audioFile.cpp
     b3Config.cpp
+    sighandler.cpp
 )
 
 # needed for ffmpeg libs

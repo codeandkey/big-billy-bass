@@ -5,6 +5,7 @@
 
 #include "logger.h"
 #include "signalProcessingDefaults.h"
+#include "timeManager.h"
 
 using namespace b3;
 using namespace audioDriverDefaults;
@@ -13,10 +14,11 @@ using namespace audioDriverDefaults;
 
 void b3::audioDriver::closeDevice()
 {
+    timeManager tm;
     pthread_mutex_lock(&m_audioMutex);
     if (m_deviceOpen) {
 #ifndef DUMMY_ALSA_DRIVERS
-        snd_pcm_drain(m_audioDevice);
+        // snd_pcm_drain(m_audioDevice);
         snd_pcm_close(m_audioDevice);
         m_audioDevice = nullptr;
         m_hardwareParams = nullptr;
@@ -28,6 +30,7 @@ void b3::audioDriver::closeDevice()
     assert(!m_hardwareParams);
 #endif
     pthread_mutex_unlock(&m_audioMutex);
+    DEBUG("Audio Driver %llu", tm.lap());
 }
 
 int b3::audioDriver::updateAudioChannelData(int sampleRate, int channels, int bufferSize)
