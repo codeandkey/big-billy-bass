@@ -1,5 +1,10 @@
 #include "signalProcessing.h"
 
+extern "C" {
+#include <sys/un.h>
+#include <unistd.h>
+}
+
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -172,6 +177,20 @@ void signalProcessor::_negotiateChunkSize()
         m_chunkSizeUs = m_chunkSize * 1e6 / m_audioFile->getSampleRate() / SPD::BYTES_PER_SAMPLE / m_audioFile->getChannels();
         DEBUG("Setting final uS chunk size to %llu", m_chunkSizeUs);
     }
+}
+
+void b3::signalProcessor::_setUpSocket()
+{
+    // m_socketFd = socket(AF_UNIX, SOCK_STREAM, 0);
+    // memset(&m_sockaddr, 0, sizeof(m_sockaddr));
+    // m_sockaddr.sun_family = AF_UNIX;
+    // strcpy(m_sockaddr.sun_path,"/tmp/b3.sock");
+    
+    // if (bind(m_socketFd, (struct sockaddr *)&m_sockaddr, sizeof(m_sockaddr)) == -1) {
+    //     ERROR("Failed to open socket %d!",m_socketFd);
+    //     return;
+    // }
+
 }
 
 uint64_t signalProcessor::usToNextChunk()

@@ -18,6 +18,7 @@ namespace configVars {
     constexpr const char *MOUTH_THRESHOLD = "mouth_threshold";
     constexpr const char *RMS_WINDOW_MS = "rms_window_ms";
     constexpr const char *CHUNK_SIZE_MS = "chunk_size_ms";
+    constexpr const char *FLIP_INTERVAL_MS = "flip_interval_ms";
     constexpr const char *BUFFER_COUNT = "buffer_count";
     constexpr const char *SEEK_TIME = "seek_time";
 
@@ -34,6 +35,7 @@ namespace configVars {
         {BODY_THRESHOLD,    [](b3Config &cfg, std::string value) {assignInt(cfg.BODY_THRESHOLD, value);}},
         {MOUTH_THRESHOLD,   [](b3Config &cfg, std::string value) {assignInt(cfg.MOUTH_THRESHOLD, value);}},
         {RMS_WINDOW_MS,     [](b3Config &cfg, std::string value) {assignInt(cfg.RMS_WINDOW_MS, value);}},
+        {FLIP_INTERVAL_MS,  [](b3Config &cfg, std::string value) {assignInt(cfg.FLIP_INTERVAL_MS, value);}},
         {BUFFER_COUNT,      [](b3Config &cfg, std::string value) {assignInt(cfg.CHUNK_COUNT, value);}},
         {SEEK_TIME,         [](b3Config &cfg, std::string value) {assignU64(cfg.SEEK_TIME, value);}}
     };
@@ -112,6 +114,7 @@ void b3::b3Config::printSettings()
     printVar(configVars::MOUTH_THRESHOLD, MOUTH_THRESHOLD);
     printVar(configVars::BUFFER_COUNT, CHUNK_COUNT);
     printVar(configVars::RMS_WINDOW_MS, RMS_WINDOW_MS);
+    printVar(configVars::FLIP_INTERVAL_MS, FLIP_INTERVAL_MS);
     setComment("The following parameters are loaded at the beginning of the program and do not update");
     printVar(configVars::CHUNK_SIZE_MS, CHUNK_SIZE_MS);
     printVar(configVars::SEEK_TIME, SEEK_TIME);

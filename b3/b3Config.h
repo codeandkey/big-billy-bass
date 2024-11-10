@@ -12,10 +12,11 @@ extern "C" {
 namespace b3 {
 
     namespace configDefaults {
-        constexpr const char *DEFAULT_CONFIG_PATH = "config/b3.ini";
+        constexpr const char *DEFAULT_CONFIG_PATH = "/home/billy/.config/b3.ini";
         constexpr float DEFAULT_BODY_THRESHOLD = 10000;
         constexpr float DEFAULT_MOUTH_THRESHOLD = 10000;
         constexpr float DEFAULT_RMS_WINDOW_MS = 250;
+        constexpr float DEFAULT_FLIP_INTERVAL_MS = 2000;
 
         constexpr int DEFAULT_CONFIG_FILE_NAME_SIZE = 255;
     };
@@ -32,6 +33,7 @@ namespace b3 {
             MOUTH_THRESHOLD(configDefaults::DEFAULT_MOUTH_THRESHOLD),
             CHUNK_COUNT(signalProcessingDefaults::CHUNK_COUNT),
             RMS_WINDOW_MS(configDefaults::DEFAULT_RMS_WINDOW_MS),
+            FLIP_INTERVAL_MS(configDefaults::DEFAULT_FLIP_INTERVAL_MS),
             SEEK_TIME(0),
             m_configFileOpen(false)
         {
@@ -50,6 +52,7 @@ namespace b3 {
         int MOUTH_THRESHOLD;
         int CHUNK_COUNT;
         int RMS_WINDOW_MS;
+        int FLIP_INTERVAL_MS;
         uint64_t SEEK_TIME;
 
     private:

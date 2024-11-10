@@ -273,7 +273,7 @@ void GPIO::_writeGPIO(int rmsLpf, int rmsHpf) {
 
     static int flip;
     static int consecutiveLow;
-    constexpr int flipSeconds = 2;
+    int flipIntervalMS = m_config->FLIP_INTERVAL_MS;
 
     //DEBUG("writeGPIO handling [%d %d] vs threshold [%d %d]", rmsLpf, rmsHpf, m_config->BODY_THRESHOLD, m_config->MOUTH_THRESHOLD);
 
@@ -300,7 +300,7 @@ void GPIO::_writeGPIO(int rmsLpf, int rmsHpf) {
         //DEBUG("Consecutive low %d vs %d (%d / 40)", consecutiveLow, defaults::SAMPLE_RATE / 80, defaults::SAMPLE_RATE);
 
         if (consecutiveLow > (defaults::SAMPLE_RATE / 80)) {
-            if ((now - lastFlip) / 1000000 > flipSeconds) {
+            if ((now - lastFlip) / 1000 > (uint64_t) flipIntervalMS) {
                 flip ^= 1;
                 lastFlip = now;
             }

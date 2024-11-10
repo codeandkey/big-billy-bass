@@ -1,0 +1,62 @@
+<html data-bs-theme="dark">
+    <head>
+        <title>Hi there</title>
+        <link rel="stylesheet" href="/css/bootstrap.min.css" />
+        <link rel="stylesheet" href="/css/index.css" />
+        <link rel="stylesheet" href="/css/fontawesome.css" />
+        <link rel="stylesheet" href="/css/solid.css" />
+        <script type="text/javascript" src="/js/jquery.min.js"></script>
+        <script type="text/javascript" src="/js/index.js"></script>
+    </head>
+    <body>
+        <p style="background-image: url('api/background');"></p>
+        <marquee style="width: 100%; font-size: 40pt" scrollamount=15><i class="fa-solid fa-fish"></i>BIG BILLY BASS<i class="fa-solid fa-fish"></i></marquee>
+        <table style="font-size: 14pt;" class="table">
+            <tr class='attrRow'>
+                <td>LPF cutoff (hz)</td>
+                <td><div id="lpfCutoffValue"></div></td>
+                <td class="td-slider"><input id="lpfCutoffInput" type="range" class="slider" min="0" max="1" step="0.01"></td>
+            </tr>
+            <tr class='attrRow'>
+                <td>HPF cutoff (hz)</td>
+                <td><div id="hpfCutoffValue"></div></td>
+                <td class="td-slider"><input id="hpfCutoffInput" type="range" class="slider" min="0" max="1" step="0.01"></td>
+            </tr>
+            <tr class='attrRow'>
+                <td>Body threshold (amp)</td>
+                <td><div id="bodyThresholdValue"></div></td>
+                <td class="td-slider"><input id="bodyThresholdInput" type="range" class="slider" min="0" max="32768"></td>
+            </tr>
+            <tr class='attrRow'>
+                <td>Mouth threshold (amp)</td>
+                <td><div id="mouthThresholdValue"></div></td>
+                <td class="td-slider"><input id="mouthThresholdInput" type="range" class="slider" min="0" max="32768"></td>
+            </tr>
+            <tr class='attrRow'>
+                <td>RMS window (ms)</td>
+                <td><div id="rmsWindowValue"></div></td>
+                <td class="td-slider"><input id="rmsWindowInput" type="range" class="slider" min="5" max="250"></td>
+            </tr>
+            <tr class='attrRow'>
+                <td>Flip interval (ms)</td>
+                <td><div id="flipIntervalValue"></div></td>
+                <td class="td-slider"><input id="flipIntervalInput" type="range" class="slider" min="100" max="5000" step="100"></td>
+            </tr>
+        </table>
+        <div class="row p-0 m-0 controls">
+            <div class="col-8">
+                <select style="font-size: 5em; width: 100%" id="audioFilesInput" class="bg-dark text-light custom-select custom-select-lg" aria-label="Current audio track"><option value="adieu.mp3"></option></select>
+            </div>
+            <div id="btnPlayPause" class="col-2 text-center d-flex align-items-center" onClick="doAction('play_pause')">
+                <div>
+                    <i class="fa-solid fa-play fa-4x"></i> 
+                    <i class="fa-solid fa-pause fa-4x"></i>
+                </div>
+            </div>
+            <div class="col-2 text-center action-button" onClick="doAction('stop')">
+                <i class="fa-solid fa-stop fa-4x"></i>
+            </div>
+        </div>
+        <div id="logView" class="logView">log content!<br>more log content!</div>
+    </body>
+</html>

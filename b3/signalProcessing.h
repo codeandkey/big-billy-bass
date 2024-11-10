@@ -1,5 +1,9 @@
 #pragma once
 
+extern "C"{
+#include <sys/socket.h>
+#include <sys/un.h>
+}
 
 #include <cassert>
 #include <cstring>
@@ -34,11 +38,11 @@ namespace b3 {
             m_underRunCounter(0),
             m_chunkTimestamp(timeManager::getUsSinceEpoch()),
             m_chunkSizeUs(0),
-            m_chunkSize(0)
+            m_chunkSize(0),
 #ifdef DEBUG_FILTER_DATA
-            ,
-            m_signalDebugFile(nullptr)
+            m_signalDebugFile(nullptr),
 #endif
+            m_socketFd(0)
         {
             memset(m_filters, 0, sizeof(m_filters));
             m_filterSettings[biQuadFilter::HPF] = conf.HPF_CUTOFF;
@@ -46,6 +50,7 @@ namespace b3 {
 #ifdef DEBUG_FILTER_DATA
             m_closeFile = false;
 #endif
+            _setUpSocket();
         }
 
         ~signalProcessor();
@@ -121,7 +126,7 @@ namespace b3 {
         __setFilter(setHPF, biQuadFilter::HPF)
 
 
-        int16_t convertPcm16BuffToMono(int16_t *inBuff, int16_t channels)
+        inline int16_t convertPcm16BuffToMono(int16_t *inBuff, int16_t channels)
         {
             int sum = 0;
             for (int i = 0; i < channels; i++)
@@ -138,6 +143,8 @@ namespace b3 {
 
         void _negotiateChunkSize();
 
+        void _setUpSocket();
+
         // status fields
         bool m_fileLoaded;
         bool m_driverLoaded;
@@ -152,7 +159,7 @@ namespace b3 {
         b3Config &m_config;
 
         State m_activeState;
-
+ 
         timeManager m_tm;
 
         audioFile *m_audioFile;
@@ -165,6 +172,10 @@ namespace b3 {
         uint64_t m_chunkTimestamp;
         uint64_t m_chunkSizeUs;
         uint16_t m_chunkSize;
+
+        int m_socketFd;
+        struct sockaddr_un m_sockaddr;
+
 #ifdef DEBUG_FILTER_DATA
         FILE *m_signalDebugFile;
 #endif
