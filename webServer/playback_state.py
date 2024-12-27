@@ -8,7 +8,7 @@ from app_config import *
 
 class playBackConfig:
     DEFAULT_CONFIG_FILE_NAME = "b3.ini"
-    CONFIG_PATH_FROM_ROOT = "/home/billy/.config"
+    CONFIG_PATH_FROM_ROOT = "/opt/b3/"
     CONFIG_FILE = os.path.join(CONFIG_PATH_FROM_ROOT, DEFAULT_CONFIG_FILE_NAME)
     AUDIO_FILE_PATH = os.path.join("/","opt","b3","audio")
     EXEC_FILE = os.path.join("/", "home","billy","big-billy-bass","build", "b3", "b3")

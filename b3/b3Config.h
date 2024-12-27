@@ -12,7 +12,7 @@ extern "C" {
 namespace b3 {
 
     namespace configDefaults {
-        constexpr const char *DEFAULT_CONFIG_PATH = "/home/billy/.config/b3.ini";
+        constexpr const char *DEFAULT_CONFIG_PATH = "/tmp/b3/b3.ini";
         constexpr float DEFAULT_BODY_THRESHOLD = 10000;
         constexpr float DEFAULT_MOUTH_THRESHOLD = 10000;
         constexpr float DEFAULT_RMS_WINDOW_MS = 250;
@@ -35,7 +35,7 @@ namespace b3 {
             RMS_WINDOW_MS(configDefaults::DEFAULT_RMS_WINDOW_MS),
             FLIP_INTERVAL_MS(configDefaults::DEFAULT_FLIP_INTERVAL_MS),
             SEEK_TIME(0),
-            m_configFileOpen(false)
+            m_configFileOpen(false) 
         {
             init();
         }
