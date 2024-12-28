@@ -12,7 +12,7 @@ using namespace audioDriverDefaults;
 
 
 
-void b3::audioDriver::closeDevice()
+void b3::audioDriver::close_driver()
 {
     timeManager tm;
     pthread_mutex_lock(&m_audioMutex);
@@ -33,18 +33,18 @@ void b3::audioDriver::closeDevice()
     DEBUG("Audio Driver %llu", tm.lap());
 }
 
-int b3::audioDriver::updateAudioChannelData(int sampleRate, int channels, int bufferSize)
+int b3::audioDriver::set_output_params(int sample_rate, int channels, int frame_count)
 {
     // note: everything here is already thread safe.
     if (m_deviceOpen)
-        closeDevice();
+        close_driver();
 #ifndef DUMMY_ALSA_DRIVERS
     assert(!m_audioDevice);
 #endif
-    return openDevice(DEFAULT_DEVICE, sampleRate, channels, bufferSize);
+    return open_driver(DEFAULT_DEVICE, sample_rate, channels, frame_count);
 }
 
-int b3::audioDriver::writeAudioData(uint8_t *data, int frameCount)
+int b3::audioDriver::write_chunk(pcm_t *data, size_t frameCount)
 {
     pthread_mutex_lock(&m_audioMutex);
     int ret;
@@ -67,7 +67,7 @@ int b3::audioDriver::writeAudioData(uint8_t *data, int frameCount)
     return 0;
 }
 
-int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uint8_t channels, uint64_t samplesPerChunk)
+int b3::audioDriver::open_driver(const char *dev_name, uint32_t sample_rate, pcm_t channels, uint64_t frames_per_chunk)
 {
     /**
      * Clearing up some nomenclature here becuase I got very confused and it lead to some bugs
@@ -89,11 +89,11 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     uint32_t chnls, rate, frameRate;
     uint64_t chunkSize;
     int chunkSizeBytes;
-    
+
 
 #ifndef DUMMY_ALSA_DRIVERS
-    if ((err = snd_pcm_open(&m_audioDevice, deviceName, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
-        ERROR("Failed to open audio device %s", deviceName);
+    if ((err = snd_pcm_open(&m_audioDevice, dev_name, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
+        ERROR("Failed to open audio device %s", dev_name);
         goto badInitCleanup;
     }
 
@@ -104,15 +104,15 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     // set stream parameters
     if ((err = snd_pcm_hw_params_set_access(m_audioDevice, m_hardwareParams, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0)
         goto badInitCleanup;
-    if ((err = snd_pcm_hw_params_set_format(m_audioDevice, m_hardwareParams, DEFAULT_OUTPUT_FORAMT)) < 0)
+    if ((err = snd_pcm_hw_params_set_format(m_audioDevice, m_hardwareParams, OUTPUT_FORMAT)) < 0)
         goto badInitCleanup;
     if ((err = snd_pcm_hw_params_set_channels(m_audioDevice, m_hardwareParams, channels)) < 0)
         goto badInitCleanup;
 
-    frameRate = sampleRate;
+    frameRate = sample_rate;
     if ((err = snd_pcm_hw_params_set_rate_near(m_audioDevice, m_hardwareParams, &frameRate, 0)) < 0)
         goto badInitCleanup;
-    if ((err = snd_pcm_hw_params_set_period_size_near(m_audioDevice, m_hardwareParams, &samplesPerChunk, 0)) < 0)
+    if ((err = snd_pcm_hw_params_set_period_size_near(m_audioDevice, m_hardwareParams, &frames_per_chunk, 0)) < 0)
         goto badInitCleanup;
     // write parameters to driver
     if ((err = snd_pcm_hw_params(m_audioDevice, m_hardwareParams)) < 0) {
@@ -135,13 +135,13 @@ int b3::audioDriver::openDevice(const char *deviceName, uint32_t sampleRate, uin
     DEBUG("Opened audio device %s", snd_pcm_name(m_audioDevice));
     DEBUG("--%d Hz (%d bps)", rate, rate * 8 * chnls * signalProcessingDefaults::BYTES_PER_SAMPLE);
     DEBUG("--%d channels, %d frames/chunk (%d bytes)", chnls, chunkSize, chunkSizeBytes);
-    DEBUG("--%d ms chunks", chunkSize * 1000 / signalProcessingDefaults::DEFAULT_SAMPLE_RATE);
+    DEBUG("--%d ms chunks", chunkSize * 1000 / signalProcessingDefaults::SAMPLE_RATE);
 
 #endif 
-    return chunkSizeBytes;
+    return chunkSize;
 
 #ifndef DUMMY_ALSA_DRIVERS
-badInitCleanup:
+    badInitCleanup :
     ERROR("%s", snd_strerror(err));
     if (m_audioDevice) {
         snd_pcm_drain(m_audioDevice);

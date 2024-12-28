@@ -1,6 +1,4 @@
 #!/bin/bash
-
-
 install_if_not_present() {
     if ! dpkg -l | grep -q "$1"; then
         apt-get install -y "$1"
@@ -43,11 +41,3 @@ install_if_not_present python3-configobj
 
 # install pigpio if not present
 install_pigpio_if_not_present
-
-# Directory setup
-mkdir -p /opt/b3/audio/
-mkdir -p /tmp/b3/
-
-# build program
-cmake -B build
-make -C build

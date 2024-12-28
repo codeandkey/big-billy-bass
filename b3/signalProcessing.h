@@ -1,18 +1,12 @@
 #pragma once
 
-extern "C"{
-#include <sys/socket.h>
-#include <sys/un.h>
-}
-
 #include <cassert>
 #include <cstring>
 #include <cstdio>
 
-#include "audioFile.h"
+#include "audioSource.h"
 #include "timeManager.h" 
 #include "logger.h"
-#include "state.h"
 #include "biQuadFilter.h"
 #include "audioDriver.h"
 #include "b3Config.h"
@@ -20,113 +14,62 @@ extern "C"{
 namespace b3 {
     namespace SPD = signalProcessingDefaults;
 
+    enum State {
+        STOPPED, // No audio file is loaded or playing
+        PLAYING, // The audio file is currently playing
+        PAUSED   // There is an audio file loaded, but not playing
+    };
+
     class signalProcessor {
     public:
         signalProcessor(b3Config &conf) :
-            m_fileLoaded(false),
-            m_driverLoaded(false),
             m_fillBuffer(false),
-            m_stopCommand(false),
-
-#ifdef DEBUG_FILTER_DATA
-            m_closeFile(false),
-#endif
+            m_stop_flag(false),
             m_config(conf),
-            m_activeState(State::STOPPED),
-            m_audioFile(nullptr),
-            m_alsaDriver(nullptr),
-            m_underRunCounter(0),
-            m_chunkTimestamp(timeManager::getUsSinceEpoch()),
-            m_chunkSizeUs(0),
-            m_chunkSize(0),
-#ifdef DEBUG_FILTER_DATA
-            m_signalDebugFile(nullptr),
-#endif
-            m_socketFd(0)
-        {
-            memset(m_filters, 0, sizeof(m_filters));
-            m_filterSettings[biQuadFilter::HPF] = conf.HPF_CUTOFF;
-            m_filterSettings[biQuadFilter::LPF] = conf.LPF_CUTOFF;
-#ifdef DEBUG_FILTER_DATA
-            m_closeFile = false;
-#endif
-            _setUpSocket();
-        }
+            m_state(State::STOPPED),
+            m_audio_source(nullptr),
+            m_audio_driver(nullptr),
+            m_lpf(nullptr),
+            m_hpf(nullptr),
+            m_underun_count(0),
+            m_chunk_time_stamp(timeManager::uS_since_epoch()),
+            m_chunk_size_us(0),
+            m_frames_per_chunk(0)
+        {}
 
         ~signalProcessor();
-
-        /**
-         * To be called every time a new chunk is to be processed
-         */
+        
         void update(State state);
 
-
-
-
         // getters / setters
+        void set_state(State to);
 
-        inline State getState() const { return m_activeState; }
+        inline State get_state() const { return m_state; }
 
-        /**
-         * @brief Sets processor state.
-         * @param to State to set processor to.
-         */
-        void setState(State to);
+        void set_audio_driver(audioDriver *driver);
 
+        void set_audio_source(audioSource *S);
 
-
-        /**
-         * @brief
-         * Sets the audio driver for the audio processor. The audio processor does not own the driver.
-         *
-         * @param driver
-         */
-        void setAudioDriver(audioDriver *driver);
-
-        /**
-         * @brief
-         * Sets the audio file to be processed by the audio processor
-         * @param F The audio file to process
-         * @note
-         * F is NOT owned by the audioProcessor and must be managed by the caller
-         */
-        void setFile(audioFile *F);
-
-
-        /**
-         * @brief
-         * Unloads the current audio file
-         * @note
-         * This does not delete the audio file object, it only removes the reference
-         */
-        inline void unLoadFile()
+        inline void clear_audio_source()
         {
-            m_fileLoaded = false;
-            m_audioFile = nullptr;
-            for (int fltrNdx = 0; fltrNdx < biQuadFilter::_filterTypeCount; fltrNdx++)
-                delete m_filters[fltrNdx];
+            m_audio_source = nullptr;
+
         }
 
-        uint64_t usToNextChunk();
+
+        uint64_t us_to_next_chunk()
+        {
+            uint64_t t = m_tm.uS_since_epoch();
+            if (t > m_chunk_time_stamp)
+                return 0;
+
+            return m_chunk_time_stamp - t;
+        }
 
 
     private:
 
-
-#define __setFilter(setter, accessor)                                   \
-        inline void setter(float cutoff)                                \
-        {                                                               \
-            m_filterSettings[accessor] = cutoff;                        \
-            if (m_filters[accessor]){                                    \
-                m_filters[accessor]->setCutoff(cutoff);                  \
-            }                                                           \
-        }             
-
-        __setFilter(setLPF, biQuadFilter::LPF)
-        __setFilter(setHPF, biQuadFilter::HPF)
-
-
-        inline int16_t convertPcm16BuffToMono(int16_t *inBuff, int16_t channels)
+        inline pcm_t _pcm_to_mono(pcm_t *inBuff, int16_t channels)
         {
             int sum = 0;
             for (int i = 0; i < channels; i++)
@@ -134,50 +77,34 @@ namespace b3 {
             return sum / channels;
         }
 
-        /**
-         * @brief
-         * processes the next chunk of the loaded audio file.
-         * @return  0 on success, -1 on failure.
-         */
-        int _processChunk();
+        static inline int _calculate_chunk_size_frms(int chunk_size_ms, int sample_rate_hz)
+        {
+            return sample_rate_hz * chunk_size_ms / 1e3;
+        }
 
-        void _negotiateChunkSize();
+        int _process_chunk();
 
-        void _setUpSocket();
-
-        // status fields
-        bool m_fileLoaded;
-        bool m_driverLoaded;
+        void _negotiate_chunk_size();
 
         // flags
         bool m_fillBuffer;
-        bool m_stopCommand;
-#ifdef DEBUG_FILTER_DATA
-        bool m_closeFile;
-#endif
+        bool m_stop_flag;
 
         b3Config &m_config;
 
-        State m_activeState;
- 
+        State m_state;
+
         timeManager m_tm;
 
-        audioFile *m_audioFile;
-        audioDriver *m_alsaDriver;
+        audioSource *m_audio_source;
+        audioDriver *m_audio_driver;
+        biQuadFilter *m_lpf;
+        biQuadFilter *m_hpf;
 
-        float m_filterSettings[biQuadFilter::_filterTypeCount];
-        biQuadFilter *m_filters[biQuadFilter::_filterTypeCount];
-        int m_underRunCounter;
+        int m_underun_count;
 
-        uint64_t m_chunkTimestamp;
-        uint64_t m_chunkSizeUs;
-        uint16_t m_chunkSize;
-
-        int m_socketFd;
-        struct sockaddr_un m_sockaddr;
-
-#ifdef DEBUG_FILTER_DATA
-        FILE *m_signalDebugFile;
-#endif
+        uint64_t m_chunk_time_stamp;
+        uint64_t m_chunk_size_us;
+        uint16_t m_frames_per_chunk;
     };
 };

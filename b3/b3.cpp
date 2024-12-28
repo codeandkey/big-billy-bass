@@ -22,75 +22,53 @@ using namespace std;
 
 int main(int argc, char **argv)
 {
-    uint64_t seekTime = 0;
-    char fileName[255];
-    snprintf(fileName, sizeof(fileName), "%s/%s", audioFileDefaults::AUDIO_FILES_PATH, audioFileDefaults::DEFAULT_FILE_NAME);
-
     b3Config globalConfig;
+    // read cfg file
+    globalConfig.poll();
+    // override settings with any cmd line args
+    globalConfig.parse_cmd_args(argc, argv);
+    // save settings 
+    globalConfig.print_settings();
 
-    for (int i = 0; i < argc; ++i) {
-        if (string(argv[i]) == "-v" || string(argv[i]) == "--verbose") {
-            SET_VERBOSE_LOGGING(true);
-            INFO("Verbose logging enabled");
+
+
+    signalProcessor processor = signalProcessor(globalConfig);
+    audioDriver *driver = new audioDriver();
+    audioSource *source = nullptr;
+
+    switch (globalConfig.PROGRAM_OP_MODE) {
+
+    case op_mode::bluetooth:
+        INFO("Operating in bluetooth mode");
+        break;
+    case op_mode::file_based:
+        INFO("Operating in file-based mode");
+        audioFile *file = new audioFile();
+        if (file->open_file(globalConfig.ACTIVE_FILE, globalConfig.SEEK_TIME) != 0) {
+            INFO("Failed to open %s, exiting...", globalConfig.ACTIVE_FILE);
+            return -1;
         }
-        if (string(argv[i]) == "-f" && i + 1 < argc) {
-            snprintf(fileName, sizeof(fileName), "%s/%s", audioFileDefaults::AUDIO_FILES_PATH, argv[i + 1]);
-            INFO("loading sound file: %s", argv[i + 1]);
-            i++;
-        }
-        if (string(argv[i]) == "-lpf" && i + 1 < argc) {
-            globalConfig.LPF_CUTOFF = stod(argv[i + 1]);
-            INFO("LPF setting: %s", argv[i + 1]);
-            i++;
-        }
-        if (string(argv[i]) == "-hpf" && i + 1 < argc) {
-            globalConfig.HPF_CUTOFF = stod(argv[i + 1]);
-            INFO("HPF setting: %s", argv[i + 1]);
-            i++;
-        }
-        if (string(argv[i]) == "-seek" && i + 1 < argc) {
-            seekTime = stod(argv[i + 1]);
-            INFO("Seeking to +%s seconds", argv[i + 1]);
-            i++;
-        }
-        if (string(argv[i]) == "-body" && i + 1 < argc) {
-            globalConfig.BODY_THRESHOLD = stoi(argv[i + 1]);
-            INFO("Body RMS threshold %d", globalConfig.BODY_THRESHOLD);
-            i++;
-        }
-        if (string(argv[i]) == "-mouth" && i + 1 < argc) {
-            globalConfig.MOUTH_THRESHOLD = stoi(argv[i + 1]);
-            INFO("Mouth RMS threshold %d", globalConfig.MOUTH_THRESHOLD);
-            i++;
-        }
+        source = file;
+        break;
     }
-
-    globalConfig.printSettings();
+    if (!source) {
+        ERROR("No Audio Source could be initialized, shutting down");
+        return -1;
+    }
+    processor.set_audio_driver(driver);
+    processor.set_audio_source(source);
 
     GPIO gpio = GPIO(&globalConfig);
     gpio.start(signalHandler::sigintHandler);
-
-    audioDriver driver = audioDriver();
-    audioFile file = audioFile();
-    signalProcessor processor = signalProcessor(globalConfig);
-
-    if (file.openFile(fileName, seekTime) != 0){
-        INFO("Failed to open %s, exiting...",fileName);
-        return -1;
-    }
-    processor.setAudioDriver(&driver);
-    processor.setFile(&file);
-
     do {
         globalConfig.poll();
         processor.update(State::PLAYING);
-    } while (!signalHandler::g_shouldExit && processor.getState() != State::STOPPED);
+    } while (!signalHandler::g_shouldExit && processor.get_state() != State::STOPPED);
+
 
     INFO("Shutting down...");
-
-    globalConfig.SEEK_TIME = file.getCurrentTimestampUs();
-    globalConfig.printSettings();
-
+    globalConfig.SEEK_TIME = source->stream_timestamp_uS();
+    globalConfig.print_settings();
     gpio.stop();
 
     DEBUG("Have a nice day :)");

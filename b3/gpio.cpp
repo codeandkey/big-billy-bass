@@ -32,7 +32,7 @@ GPIO::GPIO(b3Config* config) : m_config(config),
                                m_pinWriteCount(0) {
     assert(!g_gpioService);
     g_gpioService = this;
-    m_lastDebugUs = timeManager::getUsSinceEpoch();
+    m_lastDebugUs = timeManager::uS_since_epoch();
 }
 
 GPIO::~GPIO() {
@@ -91,7 +91,7 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
     }
 
     if (m_gpioInitialized) {
-        uint8_t fail = _enumPins([](int pin) -> uint8_t {
+        pcm_t fail = _enumPins([](int pin) -> pcm_t {
             if (gpioSetMode(pin, PI_OUTPUT) < 0) {
                 ERROR("Failed to set pin %d mode: %s", pin, strerror(errno));
                 return 1;
@@ -125,7 +125,7 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
     _flushPins();
 
     INFO("GPIO ready for frames");
-    m_currentFrameStartUs = timeManager::getUsSinceEpoch();
+    m_currentFrameStartUs = timeManager::uS_since_epoch();
 
     while (m_running.load() && !signalHandler::g_shouldExit) {
         // Pull frame from queue, or reset timing if empty
@@ -134,7 +134,7 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
             lock_guard<mutex> lock(m_frameQueueMutex);
 
             if (m_frameQueue.empty()) {
-                m_currentFrameStartUs = timeManager::getUsSinceEpoch();
+                m_currentFrameStartUs = timeManager::uS_since_epoch();
 
                 if (!timingReset) {
                     WARNING("GPIO ran out of frames, timing reset");
@@ -158,7 +158,7 @@ int GPIO::_threadMain(void (*sigintHandler)(int)) {
         _processFrame(currentFrame);
         m_previousFrame = std::move(currentFrame);
 
-        uint64_t now = timeManager::getUsSinceEpoch();
+        uint64_t now = timeManager::uS_since_epoch();
         if (now - m_lastDebugUs > defaults::DEBUG_INTERVAL_S * 1000000) {
             INFO("%d GPIO writes/s, thresholds [%d %d]",
                  m_pinWriteCount / defaults::DEBUG_INTERVAL_S,
@@ -184,11 +184,11 @@ void GPIO::_processFrame(const Frame& frame) {
     bool skippedFrame = true;
     int rmsLpf = 0, rmsHpf = 0;
 
-    m_currentFrameStartUs = timeManager::getUsSinceEpoch();
+    m_currentFrameStartUs = timeManager::uS_since_epoch();
 
 
     while (!signalHandler::g_shouldExit) {
-        uint64_t now = timeManager::getUsSinceEpoch();
+        uint64_t now = timeManager::uS_since_epoch();
 
         //DEBUG("frame us %d", now - m_currentFrameStartUs);
 
@@ -247,7 +247,7 @@ int GPIO::_computeRMS(uint64_t now, const Frame& frame, bool lpf) {
     return sqrt((float) sum / (float) count);
 }
 
-uint8_t GPIO::_enumPins(uint8_t (*callback)(int)) {
+pcm_t GPIO::_enumPins(pcm_t (*callback)(int)) {
     return callback(defaults::PIN_BODY_DIRECTION_A)
          | callback(defaults::PIN_BODY_DIRECTION_B)
          | callback(defaults::PIN_BODY_SPEED)
@@ -259,7 +259,7 @@ uint8_t GPIO::_enumPins(uint8_t (*callback)(int)) {
 void GPIO::_flushPins() {
 #ifdef ENABLE_GPIO
     if (m_gpioInitialized) {
-        _enumPins([](int pin) -> uint8_t { gpioWrite(pin, 0); return 0; });
+        _enumPins([](int pin) -> pcm_t { gpioWrite(pin, 0); return 0; });
         DEBUG("GPIO pins flushed");
     }
 #endif
@@ -279,7 +279,7 @@ void GPIO::_writeGPIO(int rmsLpf, int rmsHpf) {
 
     int move_body = rmsLpf > m_config->BODY_THRESHOLD;
     int move_mouth = rmsHpf > m_config->MOUTH_THRESHOLD;
-    uint64_t now = timeManager::getUsSinceEpoch();
+    uint64_t now = timeManager::uS_since_epoch();
     static uint64_t lastFlip = now;
 
     if (move_body) {

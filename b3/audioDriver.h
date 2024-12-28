@@ -13,26 +13,17 @@ extern "C" {
 
 namespace b3 {
     namespace audioDriverDefaults {
+        namespace SPD = signalProcessingDefaults;
         constexpr const char *DEFAULT_DEVICE = "default";
 #ifndef DUMMY_ALSA_DRIVERS
-        constexpr _snd_pcm_format __get_default_format__()
-        {
-            switch (signalProcessingDefaults::DEFAULT_AUDIO_FORMAT) {
-            case (signalProcessingDefaults::PCM_16):
-                return SND_PCM_FORMAT_S16;
-            case (signalProcessingDefaults::PCM_24):
-                return SND_PCM_FORMAT_S24;
-            case (signalProcessingDefaults::PCM_32):
-                return SND_PCM_FORMAT_S32;
-            default:
-                return SND_PCM_FORMAT_UNKNOWN;
-            }
-        }
-
-        constexpr _snd_pcm_format DEFAULT_OUTPUT_FORAMT = __get_default_format__();
+        constexpr _snd_pcm_format OUTPUT_FORMAT = SPD::__default_fmt_selector(
+            SND_PCM_FORMAT_S16,
+            SND_PCM_FORMAT_S32,
+            SND_PCM_FORMAT_FLOAT,
+            SND_PCM_FORMAT_FLOAT64
+        );
 #endif
     };
-
 
     class audioDriver {
     public:
@@ -46,74 +37,59 @@ namespace b3 {
             m_deviceName[0] = '\0';
             pthread_mutex_init(&m_audioMutex, nullptr);
         }
-        ~audioDriver() { closeDevice(); }
-
-        /**
-         * @brief Opens an audio device with the specified parameters.
-         *
-         * This function initializes and configures an audio device for playback.
-         * It sets various hardware parameters such as sample rate, channels, and buffer size.
-         * If the device is already open, it will return an error.
-         *
-         * @param deviceName The name of the audio device to open.
-         * @param sampleRate The sample rate of the audio in frames per second.
-         * @param channels The number of audio channels (e.g., 1 for mono, 2 for stereo).
-         * @param buffSize The buffer size in frames.
-         * @return The size of the chunk in frames if successful, or a negative error code if failed.
-         *
-         * @note This function uses ALSA (Advanced Linux Sound Architecture) for audio device management.
-         *
-         * @warning Ensure that the device is not already open before calling this function.
-         *
-         */
-        int openDevice(const char *deviceName, uint32_t sampleRate, uint8_t channels, uint64_t buffsize);
-
-        /**
-         * @brief Opens the default audio device with the specified parameters.
-         *
-         * This function initializes and configures an audio device for playback.
-         * It sets various hardware parameters such as sample rate, channels, and buffer size.
-         * If the device is already open, it will return an error.
-         *
-         * @param sampleRate The sample rate of the audio in frames per second.
-         * @param channels The number of audio channels (e.g., 1 for mono, 2 for stereo).
-         * @param buffSize The buffer size in frames.
-         * @return The size of the chunk in frames if successful, or a negative error code if failed.
-         *
-         * @note This function uses ALSA (Advanced Linux Sound Architecture) for audio device management.
-         *
-         * @warning Ensure that the device is not already open before calling this function.
-         *
-         */
-        inline int openDevice(uint32_t sampleRate, uint8_t channels, uint64_t buffsize) { return openDevice(audioDriverDefaults::DEFAULT_DEVICE, sampleRate, channels, buffsize); }
+        ~audioDriver() { close_driver(); }
 
         /**
          * @brief
-         * Closes the audio device. Thread safe.
+         *
+         * Opens the alsa device specified by dev_name. Initializes alsa context.
+         * @param dev_name ALSA device to open
+         * @param sample_rate Desired sample rate for playback
+         * @param channels Desired channesl for playback
+         * @param frames_per_chunk Desired chunks size in frames/chunk
+         * @return 0 on success, 1 on failure
          */
-        void closeDevice();
+        int open_driver(const char *dev_name, uint32_t sample_rate, pcm_t channels, uint64_t frames_per_chunk);
 
         /**
          * @brief
-         * Updates the audio device with new channel data. Thread safe.
          *
-         * @param sampleRate new sample rate
-         * @param channels new # of audio channels
-         * @return negotiated frame size in bytes
+         * Opens the `default` alsa device specified by `audioDriverDefaults::DEFAULT_DEVICE`. Initializes alsa context.
+         * @param sample_rate Desired sample rate for playback
+         * @param channels Desired channesl for playback
+         * @param frames_per_chunk Desired chunks size in frames/chunk
+         * @return 0 on success, 1 on failure
          */
-        int updateAudioChannelData(int sampleRate, int channels, int buffersize);
+        inline int open_driver(uint sample_rate, uint channels, size_t frame_per_chunk)
+        {
+            return open_driver(audioDriverDefaults::DEFAULT_DEVICE, sample_rate, channels, frame_per_chunk);
+        }
 
         /**
-         * @brief Writes audio data to the audio device.
-         *
-         * This function writes the provided audio data to the audio device if it is open.
-         * It handles potential buffer underruns and errors by attempting to recover the audio device.
-         *
-         * @param data Pointer to the audio data to be written.
-         * @param frameCount Number of frames of audio data to write.
-         * @return int Returns 0 on success, or a negative error code on failure.
+         * @brief
+         * Closes the audio device and frees alsa context
          */
-        int writeAudioData(uint8_t *data, int size);
+        void close_driver();
+
+        /**
+         * @brief 
+         * 
+         * Re-configured alsa hw params. This will call `close_driver()` returns an `open_driver()` call.
+         * @param sample_rate Desired sample rate for playback
+         * @param channels Desired channesl for playback
+         * @param frames_per_chunk Desired chunks size in frames/chunk
+         * @return 0 on success, 1 on failure
+         */
+        int set_output_params(int sampleRate, int channels, int frames_per_chunk);
+
+        /**
+         * @brief 
+         * Writes `frame_count` samples of pcm data from `data` to alsa device.
+         * @param data buffer to write from.
+         * @param frame_count Samples to write. This is independent of channel count, so buffer should be scaled up based on the channel count.
+         * @return 
+         */
+        int write_chunk(pcm_t *data, size_t frame_count);
 
     private:
 #ifndef DUMMY_ALSA_DRIVERS

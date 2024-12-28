@@ -1,5 +1,7 @@
 #pragma once
 
+#include "audioSource.h"
+
 #include <pthread.h>
 #include <vector>
 extern "C" {
@@ -14,171 +16,107 @@ extern "C" {
 
 namespace b3 {
     namespace audioFileDefaults {
-        constexpr uint8_t FILE_NAME_BUFFER_SIZE = signalProcessingDefaults::FILE_NAME_BUFFER_SIZE;
-        constexpr const char *DEFAULT_FILE_NAME = "test.mp3";
-        constexpr const char *AUDIO_FILES_PATH = "/opt/b3/audio";
-        constexpr const float DEFAULT_NORMALIZATION_LUFS = -5.;
-        constexpr AVSampleFormat __get_default_codec()
-        {
-            switch (signalProcessingDefaults::DEFAULT_AUDIO_FORMAT) {
-            case signalProcessingDefaults::PCM_16:
-                return AV_SAMPLE_FMT_S16;
-            case signalProcessingDefaults::PCM_24:
-                return AV_SAMPLE_FMT_S32;
-            case signalProcessingDefaults::PCM_32:
-                return AV_SAMPLE_FMT_FLT;
-            default:
-                return AV_SAMPLE_FMT_NONE;
-            }
-        }
-        constexpr AVSampleFormat DEFAULT_DECODER_FORMAT = __get_default_codec();
+        namespace SPD = signalProcessingDefaults;
+        constexpr const char *FILE_NAME = "test.mp3";
+        constexpr AVSampleFormat DECODER_FORMAT = SPD::__default_fmt_selector(
+            AV_SAMPLE_FMT_S16,
+            AV_SAMPLE_FMT_S32,
+            AV_SAMPLE_FMT_FLT,
+            AV_SAMPLE_FMT_DBLP
+        );
     };
 
 
-    class audioFile {
+    class audioFile : public audioSource {
     public:
         audioFile() :
-            m_formatContext(nullptr),
-            m_decoderContext(nullptr),
-            m_swrContext(nullptr),
+            m_format_ctx(nullptr),
+            m_decoder_ctx(nullptr),
+            m_swr_ctx(nullptr),
             m_decoder(nullptr),
             m_frame(nullptr),
-            m_streamIndx(-1),
-            m_frameSampleNdx(0),
+            m_stream_ndx(-1),
+            m_frame_smpl_stored(0),
             m_fileOpen(false),
-            m_packetSent(false),
-            m_currentTimeTagUs(0)
-        {
-            m_audioFileName[0] = '\0';
-            pthread_mutex_init(&m_fileMutex, nullptr);
-        }
+            m_current_timetag_uS(0)
+        {}
 
         ~audioFile();
 
-
-        int openFile(const char *fileName, uint64_t timetag);
+        /**
+         * @brief
+         * Opens audio file via the ffmpeg libraries. This initializes ffmpeg context.
+         * @param file_name full file path
+         * @param seek_time time stamp to seek to to start playback. Set to zero to start from the beginning
+         * @return 0 on success, -1 on error
+         */
+        int open_file(const char *fileName, uint64_t timetag);
 
         /**
-         * @brief Closes the active audio file (if open). Function is thread safe.
+         * @brief 
+         * Tears down active ffmpeg context components, frees all pointers
+         * 
          */
-        void closeFile();
+        void close_file();
 
         /**
-         * @brief Reads a chunk of audio data into the provided buffer.
-         *
-         * This function reads up to `readSize` bytes of audio data from the audio file
-         * into the provided buffer. Function is thread safe.
-         *
-         * @param buffer Pointer to the buffer where the audio data will be stored.
-         * @param readSize The maximum number of bytes to read into the buffer.
-         * @return The number of bytes actually read and stored in the buffer, or -1 if the file is not open.
-         *
-         * @note The function assumes that the frame has been allocated and initialized.
-         * @warning If the file is not open, the function will log a warning and return -1.
+         * @brief Reads frm_cnt # of frames into buffer. 
+         * 
+         * @param buffer Buffer to place frames into. 
+         * @param frm_cnt Number of frames to place into buffer. Note that the frame count is independent of channel count, so reading 15 frames of 2 channels of data will attempt to place 30 pcm_t samples into buffer.
+         * @return number of frames read on success, -1 on failure 
          */
-        int readChunk(uint8_t *buffer, int readSize);
+        int read_chunk(pcm_t *buffer, size_t frm_cnt) override;
 
         /**
-         * @brief Calculates the chunk size in bytes based on the given chunk size in milliseconds.
-         *
-         * This function computes the size of a chunk of audio data in bytes, based on:
-         *
-         * - The output sample rate from the file (sample rate which would be expected in a `readChunk()` call).
-         *
-         * - The number of channels in the file.
-         *
-         * - The given chunk size in milliseconds.
-         *
-         * - The default audio format defined in `signalProcessingDefaults::DEFAULT_DECODER_FORMAT`.
-         *
-         *
-         * @param chunkSizeMs The size of the chunk in milliseconds.
-         * @return The size of the chunk in bytes. Returns 0 if the file is not open.
+         * @brief 
+         * The sample rate of the ffmpeg stream.
+         * @return sample rate, in Hz
          */
-        int chunkSizeBytes(float chunkSizeMs) const;
+        int sample_rate() override;
 
         /**
-         * @return number of audio channels in the loaded audio file. 0 if no file is loaded
+         * @brief  
+         * The current timestamp of the current stream
+         * @return 
+         * TimeStamp in microSeconds
          */
-        inline int getChannels() const
+        inline uint64_t stream_timestamp_uS() override { return m_current_timetag_uS; }
+
+
+        /**
+         * @brief 
+         * Number of channels in the current audio stream
+         * @return
+         * channel count. 
+         */
+        inline int ch_count() override
         {
             if (!m_fileOpen)
                 return 0;
-            assert(m_decoderContext != nullptr);
-            return m_decoderContext->ch_layout.nb_channels;
+            assert(m_decoder_ctx != nullptr);
+            return m_decoder_ctx->ch_layout.nb_channels;
         }
-
-
-        /**
-         * @brief Returns the sample rate of the loaded audio file.
-         * @return sample rate (hz), 0 if no file is loaded
-
-         */
-        int getSampleRate() const;
-
-        inline int getCurrentTimestampUs() const { return m_currentTimeTagUs; }
 
     private:
-        /**
-         * @brief gets the size of the current frame (frame must be init'd and loaded). Function is NOT thread safe.
-         *
-         * @return int The size of the frame in bytes
-         */
-        inline int _getFrameSize() const
-        {
-            assert(m_frame != nullptr);
-            assert(m_decoderContext != nullptr);
-            return _getFrameSize(m_frame);
-        }
-
-        inline int _getFrameSize(AVFrame *frame) const
-        {
-            if (frame == nullptr)
-                return 0;
-            assert(m_decoderContext != nullptr);
-            return frame->ch_layout.nb_channels * frame->nb_samples * av_get_bytes_per_sample(audioFileDefaults::DEFAULT_DECODER_FORMAT);
-        }
-
-        inline int _normalizeAudio(const char *fileName);
 
         /**
-         * @brief Reads a frame from the audio file.
-         *
-         * This function reads a frame from the audio file and decodes it. It handles
-         * packet reading, decoding, and frame conversion. If the file is not open,
-         * it returns an error. The frame is decoded into the format specified by `audioFileDefaults::DEFAULT_DECODER_FORMAT`.
-         *
-         * @param frame Pointer to an AVFrame structure where the decoded frame will be stored.
-         * @return int Returns the size of the frame buffer on success, or a negative error code on failure.
-         *
-         * Error Codes:
-         * - -1: File not open or could not find a valid packet.
-         *
-         * - AVERROR_EOF: End of file reached.
-         *
-         * - AVERROR(EAGAIN): Decoder needs more packets to produce a frame.
-         *
-         * Other negative values:
-         *
-         * - Errors during packet reading, sending, receiving, or frame conversion.
+         * @brief Reads the next AVFrame into frame.
+         * @param frame the next AVFrame will be stored here. Sample rate is automatically convered to `signalprocessingDefaults::DEFAULT_SAMPLE_RATE`
+         * @return number of samples in the AVFrame        
          */
         int _readFrame(AVFrame *frame);
 
-
-        AVFormatContext *m_formatContext;
-        AVCodecContext *m_decoderContext;
-        SwrContext *m_swrContext;
+        AVFormatContext *m_format_ctx;
+        AVCodecContext *m_decoder_ctx;
+        SwrContext *m_swr_ctx;
         AVCodec *m_decoder;
         AVFrame *m_frame;   // used for reading frames, most recent frame read is stored here
-        int8_t m_streamIndx;
+        int8_t m_stream_ndx;
 
-        char m_audioFileName[audioFileDefaults::FILE_NAME_BUFFER_SIZE];
-
-        int m_frameSampleNdx;
+        int m_frame_smpl_stored;
         bool m_fileOpen;
         bool m_packetSent;
-        uint64_t m_currentTimeTagUs;
-
-        pthread_mutex_t m_fileMutex;
+        uint64_t m_current_timetag_uS;
     }; // class audioFile
 }; // namespace b3

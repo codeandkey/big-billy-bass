@@ -3,7 +3,7 @@
 #include <time.h>
 
 
-uint64_t timeManager::getUsSinceEpoch()
+uint64_t timeManager::uS_since_epoch()
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);

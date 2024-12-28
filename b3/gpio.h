@@ -15,11 +15,11 @@ namespace b3 {
 namespace gpio {
 namespace defaults {
     // Audio processing defaults
-    constexpr int SAMPLE_RATE = signalProcessingDefaults::DEFAULT_SAMPLE_RATE;
+    constexpr int SAMPLE_RATE = signalProcessingDefaults::SAMPLE_RATE;
 
     // PWM duty cycles per motor (0-255)
-    constexpr uint8_t BODY_DUTY = 255 * 90 / 100;  // 95%
-    constexpr uint8_t MOUTH_DUTY = 0;
+    constexpr pcm_t BODY_DUTY = 255 * 90 / 100;  // 95%
+    constexpr pcm_t MOUTH_DUTY = 0;
 
     // GPIO pin numbers
     constexpr int PIN_BODY_DIRECTION_A = 17;
@@ -30,7 +30,7 @@ namespace defaults {
     constexpr int PIN_MOUTH_SPEED = 13;
 
     // Audio sample type
-    typedef int16_t Sample;
+    typedef pcm_t Sample;
 
     // Debug interval (seconds)
     constexpr int DEBUG_INTERVAL_S = 3;
@@ -131,7 +131,7 @@ class GPIO {
      * @param f The callback method, called for each pin number.
      * @return the union of each invocation's return value.
      */
-    uint8_t _enumPins(uint8_t (*f)(int));
+    pcm_t _enumPins(pcm_t (*f)(int));
 
     /**
      * Sets all pin outputs to the low state.

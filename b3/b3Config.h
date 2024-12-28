@@ -8,25 +8,30 @@ extern "C" {
 #include <cstdio>
 
 #include "signalProcessingDefaults.h"
+#include "programPaths.h"
 
 namespace b3 {
+    enum op_mode {
+        bluetooth,
+        file_based
+    };
 
     namespace configDefaults {
-        constexpr const char *DEFAULT_CONFIG_PATH = "/tmp/b3/b3.ini";
+        constexpr const char *DEFAULT_CONFIG_FNAME = "b3.ini";
+        constexpr size_t FILE_NAME_BUFFER_SIZE = 255;
         constexpr float DEFAULT_BODY_THRESHOLD = 10000;
         constexpr float DEFAULT_MOUTH_THRESHOLD = 10000;
         constexpr float DEFAULT_RMS_WINDOW_MS = 250;
         constexpr float DEFAULT_FLIP_INTERVAL_MS = 2000;
-
-        constexpr int DEFAULT_CONFIG_FILE_NAME_SIZE = 255;
+        constexpr op_mode DEFAULT_OP_MODE = bluetooth;      // assume bluetooth unless the -f flag provides a file       
     };
 
 
     class b3Config {
     public:
         b3Config() :
-            LPF_CUTOFF(signalProcessingDefaults::HPF_CUTOFF_DEFAULT),
-            HPF_CUTOFF(signalProcessingDefaults::LPF_CUTOFF_DEFAULT),
+            LPF_CUTOFF(signalProcessingDefaults::HPF_CUTOFF),
+            HPF_CUTOFF(signalProcessingDefaults::LPF_CUTOFF),
             CHUNK_SIZE_MS(signalProcessingDefaults::CHUNK_SIZE_MS),
             BUFFER_LENGTH_MS(signalProcessingDefaults::BUFFER_LENGTH_MS),
             BODY_THRESHOLD(configDefaults::DEFAULT_BODY_THRESHOLD),
@@ -34,15 +39,22 @@ namespace b3 {
             CHUNK_COUNT(signalProcessingDefaults::CHUNK_COUNT),
             RMS_WINDOW_MS(configDefaults::DEFAULT_RMS_WINDOW_MS),
             FLIP_INTERVAL_MS(configDefaults::DEFAULT_FLIP_INTERVAL_MS),
+            PROGRAM_OP_MODE(configDefaults::DEFAULT_OP_MODE),
             SEEK_TIME(0),
-            m_configFileOpen(false) 
+            m_config_file(nullptr)
         {
+            snprintf(
+                m_config_file_name,
+                sizeof(m_config_file_name),
+                "%s/%s",
+                programPaths::CONFIG_PATH,
+                configDefaults::DEFAULT_CONFIG_FNAME);;
             init();
         }
         ~b3Config();
-
+        void parse_cmd_args(int argc, char **argv);
         void poll();
-        void printSettings();
+        void print_settings();
 
         float LPF_CUTOFF;
         float HPF_CUTOFF;
@@ -53,31 +65,28 @@ namespace b3 {
         int CHUNK_COUNT;
         int RMS_WINDOW_MS;
         int FLIP_INTERVAL_MS;
+        char ACTIVE_FILE[configDefaults::FILE_NAME_BUFFER_SIZE];
+        op_mode PROGRAM_OP_MODE;
         uint64_t SEEK_TIME;
 
     private:
-
+        char m_config_file_name[configDefaults::FILE_NAME_BUFFER_SIZE];
         int init();
 
 #define __printer(method, type, typeStr)                                                    \
         inline void method(const char *var, type value){                                    \
-            if (m_configFileOpen)   fprintf(m_configFile, "%s=" typeStr "\n", var, value);  \
+            if (m_config_file)   fprintf(m_config_file, "%s=" typeStr "\n", var, value);  \
         }
 
-        __printer(printVar, int, "%d")
-        __printer(printVar, float, "%f")
-        __printer(printVar, uint64_t, "%lu");
+        __printer(print_var, int, "%d")
+            __printer(print_var, float, "%f")
+            __printer(print_var, uint64_t, "%lu");
 
-        inline void setComment(const char *comment)
+        inline void set_comment(const char *comment)
         {
-            if (m_configFileOpen)   fprintf(m_configFile, "# %s\n", comment);
+            if (m_config_file)   fprintf(m_config_file, "# %s\n", comment);
         }
 
-
-        bool m_configFileOpen;
-        FILE *m_configFile;
+        FILE *m_config_file;
     };
-
-
-
 };

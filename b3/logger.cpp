@@ -133,7 +133,7 @@ void _logger::log(LogLevel level, const char *file, int line, const char *func, 
         break;
     case ERROR:
         printf("" BRED "[ERROR]" reset " ");
-        printf("%s:%d:%s ", file, line, func);
+        printf(UWHT "%s:%d:%s()\t" reset, file, line, func);
         break;
     }
     vprintf(message, args);

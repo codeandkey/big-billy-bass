@@ -19,6 +19,17 @@ target_link_libraries(b3
     swresample
 )
 
+if (USE_PCM_S16)
+    message(STATUS "PCM resolution set to signed 16-bit int")
+elseif(USE_PCM_S32)
+    message(STATUS "PCM resolution set to signed 32-bit int")
+elseif(USE_PCM_F32)
+    message(STATUS "PCM resolution set to 32-bit float")
+elseif(USE_PCM_F64)
+    message(STATUS "PCM resolution set to 64-bit float")
+else()
+    message(STATUS "PCM resolution set to signed 16-bit int")
+endif()
 if (ENABLE_ASOUND)
     message(STATUS "Enabling ALSA audio driver")
     target_link_libraries(b3 asound)
