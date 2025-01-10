@@ -31,6 +31,7 @@ install_if_not_present cmake
 install_if_not_present libavcodec-dev
 install_if_not_present libavformat-dev
 install_if_not_present libasound2-dev
+install_if_not_present libpulse-dev
 
 # Install pip if not present
 install_if_not_present python3-pip

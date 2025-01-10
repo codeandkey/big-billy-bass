@@ -169,13 +169,12 @@ int b3::audioFile::_readFrame(AVFrame *frame)
     // get most current frame
     for (uint pckCnt = 0; pckCnt < m_format_ctx->nb_streams; pckCnt++) {
         if ((ret = av_read_frame(m_format_ctx, packet)) < 0) {
-            if (ret != AVERROR_EOF){
-                // don't want to log eof here, since we may see eofs from other streams
-                WARNING("Failed to read frame");
-                goto errorCleanup;
-            }
+            if (ret == AVERROR_EOF)
+                continue;
+                
+            WARNING("Failed to read frame");
+            goto errorCleanup;
         }
-
         if (packet->stream_index == m_stream_ndx)
             break;
         else
@@ -193,7 +192,6 @@ int b3::audioFile::_readFrame(AVFrame *frame)
     }
 
     ret = avcodec_receive_frame(m_decoder_ctx, tempFrame);
-
     if (ret == AVERROR_EOF) {
         DEBUG("Decoder reached end of file");
         // reset timestamp

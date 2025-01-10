@@ -123,7 +123,7 @@ b3::b3Config::~b3Config()
     m_config_file = nullptr;
 }
 
-void b3::b3Config::parse_cmd_args(int argc, char** argv)
+void b3::b3Config::parse_cmd_args(int argc, char **argv)
 {
     for (int i = 1; i < argc; i++) {
         if (commandlineArgs::g_flags.count(argv[i]) > 0)

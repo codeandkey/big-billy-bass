@@ -12,6 +12,7 @@ extern "C" {
 #include "signalProcessing.h"
 #include "audioDriver.h"
 #include "audioFile.h"
+#include "bluetoothAudio.h"
 #include "b3Config.h"
 #include "sighandler.h"
 
@@ -31,34 +32,30 @@ int main(int argc, char **argv)
     globalConfig.print_settings();
 
 
-
+    GPIO gpio = GPIO(&globalConfig);
     signalProcessor processor = signalProcessor(globalConfig);
     audioDriver *driver = new audioDriver();
+
     audioSource *source = nullptr;
-
-    switch (globalConfig.PROGRAM_OP_MODE) {
-
-    case op_mode::bluetooth:
+    if (globalConfig.PROGRAM_OP_MODE == op_mode::bluetooth) {
         INFO("Operating in bluetooth mode");
-        break;
-    case op_mode::file_based:
+        bluetoothAudio *bt = new bluetoothAudio();
+        source = (bt->pa_connect() == 0) ? bt : nullptr;
+
+    } else if (globalConfig.PROGRAM_OP_MODE == op_mode::file_based) {
         INFO("Operating in file-based mode");
-        audioFile *file = new audioFile();
-        if (file->open_file(globalConfig.ACTIVE_FILE, globalConfig.SEEK_TIME) != 0) {
-            INFO("Failed to open %s, exiting...", globalConfig.ACTIVE_FILE);
-            return -1;
-        }
-        source = file;
-        break;
+        audioFile *f = new audioFile();
+        source = (f->open_file(globalConfig.ACTIVE_FILE, globalConfig.SEEK_TIME) == 0) ? f : nullptr;
     }
+
     if (!source) {
-        ERROR("No Audio Source could be initialized, shutting down");
-        return -1;
+        ERROR("Failed to initialize audio source. Exiting");
+        return 01;
     }
+
     processor.set_audio_driver(driver);
     processor.set_audio_source(source);
 
-    GPIO gpio = GPIO(&globalConfig);
     gpio.start(signalHandler::sigintHandler);
     do {
         globalConfig.poll();

@@ -9,14 +9,19 @@ add_executable(b3
     audioFile.cpp
     b3Config.cpp
     sighandler.cpp
+    bluetoothAudio.cpp
 )
 
-# needed for ffmpeg libs
-target_link_libraries(b3 
+
+target_link_libraries(
+    b3 
+    # ffmpeg
     avformat
     avcodec
     avutil
     swresample
+    # pulse audio
+    pulse
 )
 
 if (USE_PCM_S16)
@@ -30,6 +35,7 @@ elseif(USE_PCM_F64)
 else()
     message(STATUS "PCM resolution set to signed 16-bit int")
 endif()
+
 if (ENABLE_ASOUND)
     message(STATUS "Enabling ALSA audio driver")
     target_link_libraries(b3 asound)

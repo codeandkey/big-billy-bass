@@ -1,6 +1,7 @@
 #pragma once
 
 #include "signalProcessingDefaults.h"
+#include "b3Config.h"
 
 namespace b3 {
 

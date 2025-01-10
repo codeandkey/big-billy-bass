@@ -53,42 +53,42 @@ namespace b3 {
         int open_file(const char *fileName, uint64_t timetag);
 
         /**
-         * @brief 
+         * @brief
          * Tears down active ffmpeg context components, frees all pointers
-         * 
+         *
          */
         void close_file();
 
         /**
-         * @brief Reads frm_cnt # of frames into buffer. 
-         * 
-         * @param buffer Buffer to place frames into. 
+         * @brief Reads frm_cnt # of frames into buffer.
+         *
+         * @param buffer Buffer to place frames into.
          * @param frm_cnt Number of frames to place into buffer. Note that the frame count is independent of channel count, so reading 15 frames of 2 channels of data will attempt to place 30 pcm_t samples into buffer.
-         * @return number of frames read on success, -1 on failure 
+         * @return number of frames read on success, -1 on failure
          */
         int read_chunk(pcm_t *buffer, size_t frm_cnt) override;
 
         /**
-         * @brief 
+         * @brief
          * The sample rate of the ffmpeg stream.
          * @return sample rate, in Hz
          */
         int sample_rate() override;
 
         /**
-         * @brief  
+         * @brief
          * The current timestamp of the current stream
-         * @return 
+         * @return
          * TimeStamp in microSeconds
          */
         inline uint64_t stream_timestamp_uS() override { return m_current_timetag_uS; }
 
 
         /**
-         * @brief 
+         * @brief
          * Number of channels in the current audio stream
          * @return
-         * channel count. 
+         * channel count.
          */
         inline int ch_count() override
         {
@@ -103,7 +103,7 @@ namespace b3 {
         /**
          * @brief Reads the next AVFrame into frame.
          * @param frame the next AVFrame will be stored here. Sample rate is automatically convered to `signalprocessingDefaults::DEFAULT_SAMPLE_RATE`
-         * @return number of samples in the AVFrame        
+         * @return number of samples in the AVFrame
          */
         int _readFrame(AVFrame *frame);
 

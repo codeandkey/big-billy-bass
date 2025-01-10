@@ -183,8 +183,7 @@ int signalProcessor::_process_chunk()
         return 0;
 
     // check for eof
-    if (samples_read < m_frames_per_chunk ||
-        samples_read == 0) {
+    if (samples_read < m_frames_per_chunk) {
         m_stop_flag = true;
         return 0;
     }
