@@ -18,7 +18,7 @@
 #include "driver/i2s_std.h"
 #include "freertos/ringbuf.h"
 #include "led.h"
-
+#include "biquad_filter.h"
 
 #define RINGBUF_HIGHEST_WATER_LEVEL    (32 * 1024)
 #define RINGBUF_PREFETCH_WATER_LEVEL   (20 * 1024)
@@ -52,7 +52,7 @@ static TaskHandle_t s_bt_i2s_task_handle = NULL;  /* handle of I2S task */
 static RingbufHandle_t s_ringbuf_i2s = NULL;     /* handle of ringbuffer for I2S */
 static SemaphoreHandle_t s_i2s_write_semaphore = NULL;
 static uint16_t ringbuffer_mode = RINGBUFFER_MODE_PROCESSING;
-
+static FilterParams lpf1, lpf2, hpf1;
 /*********************************
  * EXTERNAL FUNCTION DECLARATIONS
  ********************************/
@@ -143,9 +143,33 @@ static void bt_i2s_task_handler(void *arg)
                     tmp ^= (1 << 8);
                 }
 
+                // Run LPF/HPF filters
+                int sample_count = item_size / 2 / 2;   // 2 channels, 2 bytes per sample
+                int16_t lpf_data[sample_count];
+                int16_t hpf_data[sample_count];
+
+                // TODO update filter parameters
+                bqf_set_params(&lpf1, LPF, 1000, 44100); // dummy params
+                bqf_set_params(&hpf1, HPF, 5000, 44100);
+                bqf_set_params(&lpf2, LPF, 10, 44100);
+
+                // un-interleave data, stage 1 filtering
+                for (int sample = 0; sample < sample_count; sample++) {
+                    int mono_frame = pcm16_to_mono((int16_t *)&data[sample * 4]);
+                    lpf_data[sample] = bqf_update(&lpf1, mono_frame);
+                    hpf_data[sample] = bqf_update(&hpf1, mono_frame);
+                }
+                // stage 2 filtering
+                for (int sample = 0; sample < item_size; sample++) {
+                    lpf_data[sample] = bqf_update(&lpf2, lpf_data[sample]);
+                    hpf_data[sample] = bqf_update(&lpf2, hpf_data[sample]);
+                }
+                // TODO submit to gpio
+                // submitFrame(lpf_data, hpf_data, sample_count);
+
+                // write data to I2S
                 i2s_channel_write(tx_chan, data, item_size, &bytes_written, portMAX_DELAY);
 
-                // TODO run lpf hpf filters
 
                 vRingbufferReturnItem(s_ringbuf_i2s, (void *)data);
             }
@@ -214,6 +238,11 @@ void bt_i2s_task_start_up(void)
         ESP_LOGE(BT_APP_CORE_TAG, "%s, ringbuffer create failed", __func__);
         return;
     }
+    // initialize filters
+    bqf_init(&lpf1);
+    bqf_init(&lpf2);
+    bqf_init(&hpf1);
+
     xTaskCreate(bt_i2s_task_handler, "BtI2STask", 2048, NULL, configMAX_PRIORITIES - 3, &s_bt_i2s_task_handle);
 }
 
