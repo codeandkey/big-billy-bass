@@ -40,9 +40,9 @@ static int s_motor_health_timestamp_us = 0;
 static int s_motor_n_health_reports = 0;
 static int s_motor_write_count = 0;
 
-void motors_submit_filter_rms(uint8_t* lpf, uint8_t* hpf, int size) {
-    xRingbufferSend(s_motor_ringbuf, (void*)lpf, size, 0);
-    xRingbufferSend(s_motor_ringbuf, (void*)hpf, size, 0);
+void motors_submit_filter_rms(uint16_t* lpf, uint16_t* hpf, int count) {
+    xRingbufferSend(s_motor_ringbuf, (void*)lpf, count * 2, 0);
+    xRingbufferSend(s_motor_ringbuf, (void*)hpf, count * 2, 0);
 }
 
 void motors_set_sample_rate(int rate) {
@@ -51,13 +51,13 @@ void motors_set_sample_rate(int rate) {
     xSemaphoreGive(s_motor_semaphore);
 }
 
-void motors_handle_sample(uint8_t lpf, uint8_t hpf) {
+void motors_handle_sample(uint16_t lpf, uint16_t hpf) {
     ++s_motor_write_count;
 }
 
-void motors_handle_chunk(void* data, size_t size) {
-    uint8_t* lpf = (uint8_t*)data;
-    uint8_t* hpf = (uint8_t*)(data + size / 2);
+void motors_handle_chunk(void* data, size_t count) {
+    uint16_t* lpf = (uint16_t*)data;
+    uint16_t* hpf = (uint16_t*)(data + count / 2);
 
     xSemaphoreTake(s_motor_semaphore, portMAX_DELAY);
     int sample_rate = s_motor_sample_rate;
@@ -82,7 +82,7 @@ void motors_handle_chunk(void* data, size_t size) {
         vTaskDelay(pdMS_TO_TICKS(1000 / MOTOR_CONTROL_FREQ));
     }
 
-    s_motor_chunk_timestamp_us += (size * 1000000) / sample_rate;
+    s_motor_chunk_timestamp_us += (count * 1000000) / sample_rate;
 }
 
 void motors_write(int is_lpf, int direction) {
@@ -101,19 +101,21 @@ void motors_write(int is_lpf, int direction) {
     case -1:
         gpio_set_level(direction_pins[is_lpf][1], 0);
         gpio_set_level(direction_pins[is_lpf][0], 1);
-        ledc_set_duty_and_update(LEDC_HIGH_SPEED_MODE, channels[is_lpf], duty[is_lpf], 0);
+        ledc_set_duty(LEDC_MODE, channels[is_lpf], 0);
         break;
     case 1:
         gpio_set_level(direction_pins[is_lpf][0], 0);
         gpio_set_level(direction_pins[is_lpf][1], 1);
-        ledc_set_duty_and_update(LEDC_HIGH_SPEED_MODE, channels[is_lpf], duty[is_lpf], 0);
+        ledc_set_duty(LEDC_MODE, channels[is_lpf], duty[is_lpf]);
         break;
     case 0:
         gpio_set_level(direction_pins[is_lpf][0], 0);
         gpio_set_level(direction_pins[is_lpf][1], 0);
-        ledc_set_duty_and_update(LEDC_HIGH_SPEED_MODE, channels[is_lpf], 0, 0);
+        ledc_set_duty(LEDC_MODE, channels[is_lpf], 0);
         break;
     }
+
+    ledc_update_duty(LEDC_MODE, channels[is_lpf]);
 }
 
 void motors_init_pins() {
@@ -174,13 +176,17 @@ void motors_task_handler() {
 
     size_t recv_size = 0;
     void* recv_data = NULL;
+    int interrupted = 0;
     
     for (;;) {
         recv_data = xRingbufferReceive(s_motor_ringbuf, &recv_size, 1);
 
         if (!recv_data) {
             s_motor_chunk_timestamp_us = 0;
-            ESP_LOGW(TAG, "Motors interrupted");
+            if (!interrupted) {
+                ESP_LOGW(TAG, "Motors interrupted");
+                interrupted = 1;
+            }
             continue;
         }
 
@@ -188,9 +194,10 @@ void motors_task_handler() {
             s_motor_chunk_timestamp_us = esp_timer_get_time();
             s_motor_health_timestamp_us = s_motor_chunk_timestamp_us;
             s_motor_write_count = 0;
+            interrupted = 0;
         }
 
-        motors_handle_chunk(recv_data, recv_size);
+        motors_handle_chunk(recv_data, recv_size / 2);
         vRingbufferReturnItem(s_motor_ringbuf, recv_data);
     }
 }

@@ -16,6 +16,7 @@
 #include "esp_system.h"
 #include "esp_log.h"
 #include "led.h"
+#include "motors.h"
 
 #include "esp_bt.h"
 #include "bt_app_core.h"
@@ -216,4 +217,5 @@ void app_main(void)
 
     /* start led task */
     led_dispatch();
+	motors_dispatch();
 }
