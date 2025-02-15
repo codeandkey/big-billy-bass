@@ -2,14 +2,15 @@ use std::sync::mpsc::TryRecvError;
 
 #[derive(Debug)]
 pub enum Error {
-    SQLError(rusqlite::Error),
     TryRecvError(TryRecvError),
-}
+    IOError(std::io::Error),
+    NotifyError(notify::Error),
 
-impl From<rusqlite::Error> for Error {
-    fn from(err: rusqlite::Error) -> Self {
-        Error::SQLError(err)
-    }
+    #[cfg(feature="gpio")]
+    GPIOError(rppal::gpio::Error),
+
+    #[cfg(feature="gpio")]
+    PWMError(rppal::pwm::Error),
 }
 
 impl From<TryRecvError> for Error {
@@ -18,11 +19,43 @@ impl From<TryRecvError> for Error {
     }
 }
 
+#[cfg(feature="gpio")]
+impl From<rppal::gpio::Error> for Error {
+    fn from(err: rppal::gpio::Error) -> Self {
+        Error::GPIOError(err)
+    }
+}
+
+#[cfg(feature="gpio")]
+impl From<rppal::pwm::Error> for Error {
+    fn from(err: rppal::pwm::Error) -> Self {
+        Error::PWMError(err)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::IOError(err)
+    }
+}
+
+impl From<notify::Error> for Error {
+    fn from(err: notify::Error) -> Self {
+        Error::NotifyError(err)
+    }
+}
+
 impl Into<String> for Error {
     fn into(self) -> String {
         match self {
-            Error::SQLError(e) => format!("SQL error: {e}"),
             Error::TryRecvError(e) => format!("IPC error: {e}"),
+            Error::IOError(e) => format!("PWM error: {e}"),
+            Error::NotifyError(e) => format!("Notify error: {e}"),
+
+            #[cfg(feature="gpio")]
+            Error::GPIOError(e) => format!("GPIO error: {e}"),
+            #[cfg(feature="gpio")]
+            Error::PWMError(e) => format!("PWM error: {e}"),
         }
     }
 }

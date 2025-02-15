@@ -1,9 +1,5 @@
+use super::pin::{LogicPin, PwmPin, LogicLevel};
 use crate::error::Error;
-use crate::gpio::{LogicPin, PwmPin};
-
-#[cfg(test)]
-use crate::gpio::{MockLogicPin, MockPwmPin};
-
 use std::time::Instant;
 
 #[derive(Copy, Clone)]
@@ -13,10 +9,10 @@ pub enum Direction {
     None,
 }
 
-pub struct Limb<L, P> {
-    forward_pin: Box<L>,
-    backward_pin: Box<L>,
-    speed_pin: Box<P>,
+pub struct Limb {
+    forward_pin: LogicPin,
+    backward_pin: LogicPin,
+    speed_pin: PwmPin,
     move_speed: f32,
     forward_hold_t: Instant,
     backward_hold_t: Instant,
@@ -24,7 +20,7 @@ pub struct Limb<L, P> {
     backward_hold: Option<f32>,
 }
 
-impl<L: LogicPin + Send, P: PwmPin + Send> Limb<L, P> {
+impl Limb {
     /// Initialize a new limb. Limbs are controlled by 3 pins:
     /// 2 logic pins determine the diretcion of motion. When the limb is to be
     /// moved, one of <forward> or <backward> will be set to a HIGH state and
@@ -33,7 +29,7 @@ impl<L: LogicPin + Send, P: PwmPin + Send> Limb<L, P> {
     /// The speed pin determines the power sent to the actuating motor. A value
     /// of 1.0 will send the maximum power to the motor, and a value of 0.0 will
     /// not send any power to the motor.
-    pub fn new(forward_pin: Box<L>, backward_pin: Box<L>, speed_pin: Box<P>) -> Self {
+    pub fn new(forward_pin: LogicPin, backward_pin: LogicPin, speed_pin: PwmPin) -> Self {
         Self {
             forward_pin,
             backward_pin,
@@ -95,12 +91,12 @@ impl<L: LogicPin + Send, P: PwmPin + Send> Limb<L, P> {
                     }
                 }
 
-                states.push(backpin.set_low());
+                states.push(backpin.set(LogicLevel::LOW));
 
                 if speed > 0.0 {
-                    states.push(pin.set_high());
+                    states.push(pin.set(LogicLevel::HIGH));
                 } else {
-                    states.push(pin.set_low());
+                    states.push(pin.set(LogicLevel::LOW));
                 }
 
                 states.push(self.speed_pin.set(speed));
@@ -108,8 +104,8 @@ impl<L: LogicPin + Send, P: PwmPin + Send> Limb<L, P> {
                 *backtp = Instant::now();
             }
             Direction::None => {
-                states.push(self.forward_pin.set_low());
-                states.push(self.backward_pin.set_low());
+                states.push(self.forward_pin.set(LogicLevel::LOW));
+                states.push(self.backward_pin.set(LogicLevel::LOW));
                 states.push(self.speed_pin.set(0.0));
 
                 self.forward_hold_t = Instant::now();
@@ -126,19 +122,19 @@ impl<L: LogicPin + Send, P: PwmPin + Send> Limb<L, P> {
 
     /// Retrieve a reference to the forward direction pin (logic).
     #[cfg(test)]
-    pub fn fwd_pin(&mut self) -> &mut Box<L> {
+    pub fn fwd_pin(&mut self) -> &mut LogicPin {
         &mut self.forward_pin
     }
 
     /// Retrieve a reference to the backward direction pin (logic).
     #[cfg(test)]
-    pub fn bwd_pin(&mut self) -> &mut Box<L> {
+    pub fn bwd_pin(&mut self) -> &mut LogicPin {
         &mut self.backward_pin
     }
 
     /// Retrieve a reference to the speed control pin (pwm).
     #[cfg(test)]
-    pub fn spd_pin(&mut self) -> &mut Box<P> {
+    pub fn spd_pin(&mut self) -> &mut PwmPin {
         &mut self.speed_pin
     }
 }
@@ -147,11 +143,11 @@ impl<L: LogicPin + Send, P: PwmPin + Send> Limb<L, P> {
 /// in the 'None' direction.
 #[test]
 pub fn test_limb_initial_pins() {
-    let fwd = MockLogicPin::new(10);
-    let bwd = MockLogicPin::new(10);
-    let spd = MockPwmPin::new(10);
+    let fwd = LogicPin::new(10).unwrap();
+    let bwd = LogicPin::new(10).unwrap();
+    let spd = PwmPin::new(10).unwrap();
 
-    let mut limb = Limb::new(Box::new(fwd), Box::new(bwd), Box::new(spd));
+    let mut limb = Limb::new(fwd, bwd, spd);
 
     limb.apply(Direction::None);
 
@@ -164,11 +160,11 @@ pub fn test_limb_initial_pins() {
 /// when moving in the forward direction.
 #[test]
 pub fn test_limb_forward_pins() {
-    let fwd = MockLogicPin::new(10);
-    let bwd = MockLogicPin::new(10);
-    let spd = MockPwmPin::new(10);
+    let fwd = LogicPin::new(10).unwrap();
+    let bwd = LogicPin::new(10).unwrap();
+    let spd = PwmPin::new(10).unwrap();
 
-    let mut limb = Limb::new(Box::new(fwd), Box::new(bwd), Box::new(spd));
+    let mut limb = Limb::new(fwd, bwd, spd);
 
     limb.move_speed(0.5);
     limb.apply(Direction::Forward);
@@ -182,11 +178,11 @@ pub fn test_limb_forward_pins() {
 /// when moving in the backward direction.
 #[test]
 pub fn test_limb_backward_pins() {
-    let fwd = MockLogicPin::new(10);
-    let bwd = MockLogicPin::new(10);
-    let spd = MockPwmPin::new(10);
+    let fwd = LogicPin::new(10).unwrap();
+    let bwd = LogicPin::new(10).unwrap();
+    let spd = PwmPin::new(10).unwrap();
 
-    let mut limb = Limb::new(Box::new(fwd), Box::new(bwd), Box::new(spd));
+    let mut limb = Limb::new(fwd, bwd, spd);
 
     limb.move_speed(0.5);
     limb.apply(Direction::Backward);
@@ -199,11 +195,11 @@ pub fn test_limb_backward_pins() {
 /// Tests the forward hold frames release the motors after a given time.
 #[test]
 pub fn test_limb_forward_hold() {
-    let fwd = MockLogicPin::new(10);
-    let bwd = MockLogicPin::new(10);
-    let spd = MockPwmPin::new(10);
+    let fwd = LogicPin::new(10).unwrap();
+    let bwd = LogicPin::new(10).unwrap();
+    let spd = PwmPin::new(10).unwrap();
 
-    let mut limb = Limb::new(Box::new(fwd), Box::new(bwd), Box::new(spd));
+    let mut limb = Limb::new(fwd, bwd, spd);
 
     limb.forward_hold(Some(0.5));
     limb.apply(Direction::Forward);
@@ -224,11 +220,11 @@ pub fn test_limb_forward_hold() {
 /// Tests the backward hold frames release the motors after a given time.
 #[test]
 pub fn test_limb_backward_hold() {
-    let fwd = MockLogicPin::new(10);
-    let bwd = MockLogicPin::new(10);
-    let spd = MockPwmPin::new(10);
+    let fwd = LogicPin::new(10).unwrap();
+    let bwd = LogicPin::new(10).unwrap();
+    let spd = PwmPin::new(10).unwrap();
 
-    let mut limb = Limb::new(Box::new(fwd), Box::new(bwd), Box::new(spd));
+    let mut limb = Limb::new(fwd, bwd, spd);
 
     limb.backward_hold(Some(0.5));
     limb.apply(Direction::Backward);
