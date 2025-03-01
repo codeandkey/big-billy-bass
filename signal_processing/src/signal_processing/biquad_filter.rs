@@ -53,7 +53,7 @@ impl BiquadFilter {
 
         let mut y = 0.0;
         y += self._x.iter().zip(self._b).map(|(x, b)| x * b).sum::<f32>();
-        y += self._y.iter().zip(self._a).map(|(y, a)| y * a).sum::<f32>();
+        y -= self._y.iter().zip(self._a).map(|(y, a)| y * a).sum::<f32>();
 
         self._y.push_front(y);
         y

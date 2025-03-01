@@ -46,7 +46,7 @@ impl PaSource {
         let mut ml = Mainloop::new().unwrap();
         let mut ctx = Context::new_with_proplist(&ml, app_name, &props).unwrap();
 
-        ctx.connect(None, ContextFlagSet::NOFLAGS, None)
+        ctx.connect(None, ContextFlagSet::NOAUTOSPAWN, None)
             .or_else(|_| return Err("Failed to connect Context"))?;
 
         Self::iterate_ml_until(&mut ml, || Self::context_is_ready(&ctx)).unwrap();
