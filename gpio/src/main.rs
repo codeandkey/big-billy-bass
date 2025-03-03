@@ -15,7 +15,6 @@ use std::error::Error;
 const REPORT_TIME_S: f32 = 5.0;
 
 // Actual rate will be less due to overhead. Set this a bit above the target rate
-const MAX_RATE: u32 = 1000;
 pub struct GpioProc {
     pc: ParameterController,
     rx: GpioMessageReceiver,
@@ -52,14 +51,15 @@ impl GpioProc {
         let mut ctr = 0;
 
         let s_rate = self.pc.get::<u32>(&PARAM_SAMPLE_RATE);
+        let f_rate = self.pc.get::<u32>(&PARAM_GPIO_RATE);
         let report_elapsed = self.last_report_time.elapsed().as_secs_f32();
 
         let mut dash_pin_points = Vec::<(u128, f32, f32)>::with_capacity(
-            (lpf.len() as u32 * MAX_RATE / s_rate) as usize
+            (lpf.len() as u32 * f_rate / s_rate) as usize
         );
 
         let mut dash_rms_points = Vec::<(u128, f32, f32)>::with_capacity(
-            (lpf.len() as u32 * MAX_RATE / s_rate) as usize
+            (lpf.len() as u32 * f_rate / s_rate) as usize
         );
 
         if report_elapsed > REPORT_TIME_S {
@@ -102,7 +102,7 @@ impl GpioProc {
                 hpf[ind] as f32,
             ));
 
-            spin_sleep::sleep(Duration::from_micros((1_000_000 / MAX_RATE).into()));
+            spin_sleep::sleep(Duration::from_micros((1_000_000 / f_rate.max(1)).into()));
         }
     }
 

@@ -6,10 +6,9 @@ mod model;
 use color_eyre::Result;
 use common::dash::DashMessage;
 use common::param::*;
-use crossterm::event::{self, Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent};
 use model::{Limb, Model};
-use ratatui::{DefaultTerminal, Frame};
-use std::os::unix::thread;
+use ratatui::Frame;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::{
@@ -75,12 +74,16 @@ fn render(frame: &mut Frame, model: &Arc<Mutex<Model>>, pc: &mut ParameterContro
         .bounds([min, max])
         .labels([min.to_string(), max.to_string(), mid.to_string()]);
 
+    let n_ticks = 8;
+    let ymax = 16384;
+    let ticks = (0..(n_ticks+1)).map(|i| i * (ymax / n_ticks)).map(|x| x.to_string());
+
     // Create the Y axis and define its properties
     let y_axis = Axis::default()
         .title("RMS".red())
         .style(Style::default().white())
         .bounds([0.0, 16384.0])
-        .labels(["0", "8192", "16384"]);
+        .labels(ticks);
 
     // Create the chart and link all the parts together
     let chart = Chart::new(datasets)
@@ -93,7 +96,8 @@ fn render(frame: &mut Frame, model: &Arc<Mutex<Model>>, pc: &mut ParameterContro
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut term = ratatui::init();
-    let thr_stop = AtomicBool::new(false);
+    let stop = Arc::new(AtomicBool::new(false));
+    let thr_stop = stop.clone();
     let mut pc = ParameterController::new(&Path::new(PARAM_ROOT))?;
 
     let mut rx = common::dash::DashMessageReceiver::new()?;
@@ -102,6 +106,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let thr = std::thread::spawn(move || {
         loop {
+            if thr_stop.load(Ordering::Relaxed) {
+                break;
+            }
+
             match rx.recv() {
                 Ok(m) => match m {
                     DashMessage::LimbHistory(frame) => {
@@ -138,7 +146,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     ratatui::restore();
 
     info!("Waiting for network thread.");
-    thr_stop.store(true, Ordering::Relaxed);
+    stop.store(true, Ordering::Relaxed);
     thr.join().unwrap();
 
     info!("Bye!");

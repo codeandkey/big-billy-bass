@@ -40,6 +40,24 @@ pub const PARAM_LPF_CUTOFF: &Parameter = &Parameter("LpfCutoff", "1000.0");
 pub const PARAM_MOUTH_FWD_HOLD: &Parameter = &Parameter("MouthFwdHold", "0.1");
 pub const PARAM_MOUTH_BWD_HOLD: &Parameter = &Parameter("MouthBwdHold", "0.1");
 
+// Maximum GPIO / dash processing rate
+pub const PARAM_GPIO_RATE: &Parameter = &Parameter("GpioRate", "250");
+
+pub const ALL_PARAMS: &[&Parameter] = &[
+    PARAM_BODY_SPEED,
+    PARAM_BODY_THRESHOLD,
+    PARAM_FLIP_INTERVAL,
+    PARAM_GPIO_RATE,
+    PARAM_HPF_CUTOFF,
+    PARAM_LPF_CUTOFF,
+    PARAM_MOUTH_BWD_HOLD,
+    PARAM_MOUTH_FWD_HOLD,
+    PARAM_MOUTH_SPEED,
+    PARAM_MOUTH_THRESHOLD,
+    PARAM_RMS_WINDOW_SIZE_MS,
+    PARAM_SAMPLE_RATE,
+];
+
 pub struct ParameterController {
     cache: Arc<RwLock<HashMap<String, String>>>,
     _active_watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
@@ -88,11 +106,40 @@ impl ParameterController {
         })
     }
 
+    fn init_defaults(link: &Path) -> Result<(), Box<dyn Error>> {
+        if link.exists() {
+            return Ok(());
+        }
+
+        let defparams = link.parent().unwrap().join("default");
+
+        debug!("Initializing default link");
+        std::os::unix::fs::symlink(
+            &defparams,
+            link
+        )?;
+
+        if !defparams.is_dir() {
+            debug!("Writing {} params to default store", ALL_PARAMS.len());
+            std::fs::create_dir_all(&defparams)?;
+
+            for Parameter(pn, pv) in ALL_PARAMS {
+                std::fs::write(defparams.join(pn), pv)?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn trigger_track_update(
         active_watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
         cache: Arc<RwLock<HashMap<String, String>>>,
         link: &Path,
     ) {
+        if let Err(e) = ParameterController::init_defaults(link) {
+            warn!("Failed initializing default store: {e}");
+        }
+
         let mut track_root = std::fs::read_link(link).unwrap();
 
         if !track_root.starts_with(&PathBuf::from("/")) {
