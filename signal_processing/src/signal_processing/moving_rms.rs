@@ -17,6 +17,7 @@ impl MovingRms {
 
     pub fn update(&mut self, sample: f32) -> f32 {
         self.samples.push_front(sample.powf(2.0));
+        self.running_sum += sample.powf(2.0);
         self.set_size(self.target_size);
         f32::sqrt(self.running_sum / self.target_size as f32)
     }

@@ -1,0 +1,17 @@
+[package]
+name = "gpio"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dirs = "6.0.0"
+log = "0.4.22"
+pretty_env_logger = "0.5.0"
+rust-pigpio = { version = "0.2.0", optional = true }
+common = { path="../common", version="0.1.0"}
+spin_sleep = "1.3.0"
+color-eyre = "0.6.3"
+
+[features]
+gpio = ["dep:rust-pigpio"]
+default = ["gpio"]

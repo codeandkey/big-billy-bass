@@ -7,33 +7,34 @@ use std::{
 };
 
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::error::Error;
 
-use crate::error::Error;
+pub const PARAM_ROOT: &str = "/tmp/billy";
 
 #[derive(Clone, Copy)]
 pub struct Parameter(&'static str, &'static str);
 
 // Width of the RMS window in seconds
-pub const PARAM_SECOND_STAGE_CUTOFF: &Parameter = &Parameter("RmsWindow", "0.3");
+pub const PARAM_RMS_WINDOW_SIZE_MS: &Parameter = &Parameter("WindowSizeMs", "100");
 
 // Milliseconds between attempted head/tail movement swaps
-pub const PARAM_FLIP_INTERVAL: &Parameter = &Parameter("FlipInterval", "500");
+pub const PARAM_FLIP_INTERVAL: &Parameter = &Parameter("FlipInterval", "1000");
 
 // Effective sample rate of the current track
 // John: this will probably need to have to come from the pulseaudio libary and not the database
 pub const PARAM_SAMPLE_RATE: &Parameter = &Parameter("SampleRate", "44100");
 
 // RMS thresholds at which to actuate the motors
-pub const PARAM_BODY_THRESHOLD: &Parameter = &Parameter("BodyThreshold", "1000");
-pub const PARAM_MOUTH_THRESHOLD: &Parameter = &Parameter("MouthThreshold", "1000");
+pub const PARAM_BODY_THRESHOLD: &Parameter = &Parameter("BodyThreshold", "5000");
+pub const PARAM_MOUTH_THRESHOLD: &Parameter = &Parameter("MouthThreshold", "5000");
 
 // PWM work factors for motor speed (0-1)
 pub const PARAM_BODY_SPEED: &Parameter = &Parameter("BodySpeed", "1.0");
 pub const PARAM_MOUTH_SPEED: &Parameter = &Parameter("MouthSpeed", "1.0");
 
 // LPF, HPF cutoff settings
-pub const PARAM_HPF_CUTOFF: &Parameter = &Parameter("HpfCutoff", "0.0");
-pub const PARAM_LPF_CUTOFF: &Parameter = &Parameter("LpfCutoff", "20000.0");
+pub const PARAM_HPF_CUTOFF: &Parameter = &Parameter("HpfCutoff", "5000.0");
+pub const PARAM_LPF_CUTOFF: &Parameter = &Parameter("LpfCutoff", "1000.0");
 
 // Time in seconds to hold the mouth open or closed before releasing the motor
 pub const PARAM_MOUTH_FWD_HOLD: &Parameter = &Parameter("MouthFwdHold", "0.1");
@@ -46,7 +47,7 @@ pub struct ParameterController {
 }
 
 impl ParameterController {
-    pub fn new(root: &Path) -> Result<Self, Error> {
+    pub fn new(root: &Path) -> Result<Self, Box<dyn Error>> {
         if !root.is_dir() {
             std::fs::create_dir_all(root).expect("Failed to create parameter root");
         }
@@ -58,22 +59,25 @@ impl ParameterController {
         let w_active_watcher = active_watcher.clone();
         let w_link = root.join("current");
 
-        let mut root_watcher = notify::recommended_watcher(move |r: Result<Event, notify::Error>| {
-            if let Ok(e) = r {
-                match e.kind {
-                    EventKind::Create(_) => {
-                        if e.paths.iter().next().unwrap() == &w_link {
-                            ParameterController::trigger_track_update(
-                                w_active_watcher.clone(),
-                                w_cache.clone(),
-                                &w_link,
-                            );
+        ParameterController::trigger_track_update(active_watcher.clone(), cache.clone(), &w_link);
+
+        let mut root_watcher =
+            notify::recommended_watcher(move |r: Result<Event, notify::Error>| {
+                if let Ok(e) = r {
+                    match e.kind {
+                        EventKind::Create(_) => {
+                            if e.paths.iter().next().unwrap() == &w_link {
+                                ParameterController::trigger_track_update(
+                                    w_active_watcher.clone(),
+                                    w_cache.clone(),
+                                    &w_link,
+                                );
+                            }
                         }
+                        _ => (),
                     }
-                    _ => (),
                 }
-            }
-        })?;
+            })?;
 
         root_watcher.watch(root, RecursiveMode::NonRecursive)?;
 
@@ -95,11 +99,9 @@ impl ParameterController {
             track_root = link.parent().unwrap().join(track_root);
         }
 
-        if let Err(e) = ParameterController::update_track(
-            active_watcher.clone(),
-            cache.clone(),
-            &track_root,
-        ) {
+        if let Err(e) =
+            ParameterController::update_track(active_watcher.clone(), cache.clone(), &track_root)
+        {
             warn!("Failed to update track: {:?}", e);
         }
     }
@@ -108,15 +110,19 @@ impl ParameterController {
         active_watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
         cache: Arc<RwLock<HashMap<String, String>>>,
         track_root: &Path,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Box<dyn Error>> {
         cache.write().unwrap().clear();
 
         if let Ok(dir) = std::fs::read_dir(track_root) {
             for entry in dir {
                 if let Ok(entry) = entry {
                     let key = entry.file_name().into_string().unwrap();
-                    let value = std::fs::read_to_string(entry.path()).unwrap();
+                    let value = std::fs::read_to_string(entry.path())
+                        .unwrap()
+                        .trim()
+                        .to_string();
 
+                    debug!("Precached {} = \"{}\"", key, value);
                     cache.write().unwrap().insert(key, value);
                 }
             }
@@ -129,7 +135,15 @@ impl ParameterController {
 
         let mut w = notify::recommended_watcher(move |r: Result<Event, notify::Error>| {
             if let Ok(e) = r {
-                let fname = e.paths.iter().next().unwrap().file_name().unwrap().to_str().unwrap();
+                let fname = e
+                    .paths
+                    .iter()
+                    .next()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap();
                 match e.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
                         let value = std::fs::read_to_string(e.paths.iter().next().unwrap())
@@ -169,7 +183,7 @@ impl ParameterController {
             .cloned();
 
         if let Some(v) = cached {
-            match v.parse() {
+            match v.trim().parse() {
                 Ok(r) => return r,
                 Err(e) => {
                     warn!("{k} parsing \"{v}\" failed: {e:?}");
@@ -186,5 +200,16 @@ impl ParameterController {
 
         def.parse()
             .expect(&format!("Invalid default value {def} for {k}"))
+    }
+}
+
+pub fn set_track(track: &str) {
+    // TODO: Move this behavior to the dbus watcher
+    let root = PathBuf::from(PARAM_ROOT);
+
+    std::fs::remove_file(root.join("current")).ok();
+
+    if let Err(e) = std::os::unix::fs::symlink(root.join(track), root.join("current")) {
+        warn!("Failed creating current track link: {:?}", e);
     }
 }

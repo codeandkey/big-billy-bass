@@ -58,12 +58,12 @@ impl AudioNode {
 
         // read data
         let buff = match self._source.read()? {
-            ReadResult::NotReady => return Ok(1000),
+            ReadResult::NotReady => return Ok(0),
             ReadResult::Data(dat) => dat,
         };
 
         if buff.len() == 0 {
-            return Ok(5);
+            return Ok(0);
         }
 
         // apply filtering
@@ -79,15 +79,15 @@ impl AudioNode {
             lpf.push(self._lpf_rms.update(self._lpf.update(s)) as Sample);
         }
 
-        
         // frames * (uS/S) / (frames / S)
         let sleep_time_us: u64 = lpf.len() as u64 * 1_000_000 / 44100;
-        
+
         // send to gpio
         self._gpio_handle
             .send(GpioMessage::NextFrame(lpf, hpf))
             .unwrap();
 
+        self._source.drop()?;
         Ok(sleep_time_us)
     }
 }

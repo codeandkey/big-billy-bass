@@ -1,8 +1,8 @@
-use super::pin::{LogicPin, PwmPin, LogicLevel};
-use crate::error::Error;
+use super::pin::{LogicLevel, LogicPin, PwmPin};
+use std::error::Error;
 use std::time::Instant;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Direction {
     Forward,
     Backward,
@@ -18,6 +18,7 @@ pub struct Limb {
     backward_hold_t: Instant,
     forward_hold: Option<f32>,
     backward_hold: Option<f32>,
+    direction: Direction,
 }
 
 impl Limb {
@@ -37,6 +38,7 @@ impl Limb {
             move_speed: 1.0,
             forward_hold: None,
             backward_hold: None,
+            direction: Direction::None,
             forward_hold_t: Instant::now(),
             backward_hold_t: Instant::now(),
         }
@@ -60,12 +62,21 @@ impl Limb {
         self
     }
 
+    pub fn get_actuation(&mut self) -> f32 {
+        match self.direction {
+            Direction::None => 0.0,
+            Direction::Forward => self.move_speed,
+            Direction::Backward => -self.move_speed,
+        }
+    }
+
     /// Move the limb forward, backward, or cease movement entirely. If the limb
     /// is held in a non-none direction for time exceeding the direction's
     /// _hold_ time, the motor will be released until either None or the opposite
     /// direction is applied.
     pub fn apply(&mut self, direction: Direction) {
-        let mut states: Vec<Result<(), Error>> = vec![];
+        let mut states: Vec<Result<(), Box<dyn Error>>> = vec![];
+        self.direction = direction;
 
         let mut tp = &mut self.forward_hold_t;
         let mut backtp = &mut self.backward_hold_t;
@@ -141,6 +152,7 @@ impl Limb {
 
 /// Tests the GPIO pin states are all set to LOW or 0% work when moving the limb
 /// in the 'None' direction.
+#[cfg(not(feature = "gpio"))]
 #[test]
 pub fn test_limb_initial_pins() {
     let fwd = LogicPin::new(10).unwrap();
@@ -158,6 +170,7 @@ pub fn test_limb_initial_pins() {
 
 /// Tests the GPIO pin states are set to FWD HIGH, BWD LOW, and correct work
 /// when moving in the forward direction.
+#[cfg(not(feature = "gpio"))]
 #[test]
 pub fn test_limb_forward_pins() {
     let fwd = LogicPin::new(10).unwrap();
@@ -176,6 +189,7 @@ pub fn test_limb_forward_pins() {
 
 /// Tests the GPIO pin states are set to FWD LOW, BWD HIGH, and correct work
 /// when moving in the backward direction.
+#[cfg(not(feature = "gpio"))]
 #[test]
 pub fn test_limb_backward_pins() {
     let fwd = LogicPin::new(10).unwrap();
@@ -193,6 +207,7 @@ pub fn test_limb_backward_pins() {
 }
 
 /// Tests the forward hold frames release the motors after a given time.
+#[cfg(not(feature = "gpio"))]
 #[test]
 pub fn test_limb_forward_hold() {
     let fwd = LogicPin::new(10).unwrap();
@@ -218,6 +233,7 @@ pub fn test_limb_forward_hold() {
 }
 
 /// Tests the backward hold frames release the motors after a given time.
+#[cfg(not(feature = "gpio"))]
 #[test]
 pub fn test_limb_backward_hold() {
     let fwd = LogicPin::new(10).unwrap();

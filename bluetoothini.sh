@@ -49,8 +49,8 @@ WantedBy=bluetooth.target" > /etc/systemd/system/bt-agent.service
 
 
 #start pulseaudio
-echo "...starting pulseaudio"
-pulseaudio --start
+# echo "...starting pulseaudio"
+# pulseaudio --start
 
 # create agent
 echo "...creating bluetooth agent pulseaudio"

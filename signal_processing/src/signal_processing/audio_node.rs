@@ -118,6 +118,24 @@ impl PaSource {
         };
     }
 
+    pub fn drop(&mut self) -> Result<(), &'static str> {
+        // first check if stream is in a readable state
+        if *self._active_stream_ndx.borrow() < 0 {
+            self.connect_to_bluez_stream()?;
+            if *self._active_stream_ndx.borrow() < 0 {
+                return Ok(());
+            }
+        }
+        if !Self::iterate_ml_and_check(&mut self._ml, || Self::stream_is_ready(&self._stream))? {
+            return Ok(());
+        };
+
+        return self
+            ._stream
+            .discard()
+            .or_else(|_| return Err("Can't peek audio!"));
+    }
+
     fn connect_to_bluez_stream(&mut self) -> Result<(), &'static str> {
         let strm_ndx_cpy = Rc::clone(&self._active_stream_ndx);
         // set up source info list callback
@@ -163,6 +181,7 @@ impl PaSource {
             "Connected to stream index {}",
             self._active_stream_ndx.borrow()
         );
+        info!("{:?}", self._stream.get_sample_spec());
         Ok(())
     }
 
