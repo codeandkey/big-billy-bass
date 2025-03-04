@@ -2,8 +2,6 @@ mod audio_node;
 mod biquad_filter;
 mod moving_rms;
 
-use std::path::Path;
-
 use audio_node::{PaSource, ReadResult};
 use biquad_filter::BiquadFilter;
 use common::param::*;
@@ -30,7 +28,7 @@ pub struct AudioNode {
 
 impl AudioNode {
     pub fn new(app_name: &str) -> Self {
-        let pc = ParameterController::new(&Path::new(PARAM_ROOT)).unwrap();
+        let pc = ParameterController::new().unwrap();
         Self {
             _hpf: BiquadFilter::new_hpf(FILTER_Q, pc.get(PARAM_HPF_CUTOFF), 44100),
             _lpf: BiquadFilter::new_lpf(FILTER_Q, pc.get(PARAM_LPF_CUTOFF), 44100),

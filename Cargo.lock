@@ -148,6 +148,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "dirs",
  "log",
  "notify 8.0.0",
  "serde",

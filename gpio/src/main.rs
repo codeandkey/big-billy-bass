@@ -2,10 +2,10 @@
 extern crate log;
 
 pub mod gpio;
+use common::bus::{BusReceiver, BusSender};
 use gpio::limb::{Direction, Limb};
 use gpio::pin::{LogicPin, PwmPin};
 
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use common::param::*;
@@ -17,7 +17,7 @@ const REPORT_TIME_S: f32 = 5.0;
 // Actual rate will be less due to overhead. Set this a bit above the target rate
 pub struct GpioProc {
     pc: ParameterController,
-    rx: GpioMessageReceiver,
+    rx: BusReceiver<GpioMessage>,
     limb_body: Limb,
     limb_mouth: Limb,
     body_direction: Direction,
@@ -25,14 +25,14 @@ pub struct GpioProc {
     last_report_time: Instant,
     start_time: Instant,
     write_count: u64,
-    dash_writer: dash::DashMessageSender,
+    dash_writer: BusSender<DashMessage>,
 }
 
 impl GpioProc {
     pub fn new(limb_body: Limb, limb_mouth: Limb) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            pc: ParameterController::new(&Path::new(PARAM_ROOT))?,
-            rx: GpioMessageReceiver::new()?,
+            pc: ParameterController::new()?,
+            rx: BusReceiver::new(GPIO_PORT)?,
             limb_body,
             limb_mouth,
             body_direction: Direction::Forward,
@@ -40,7 +40,7 @@ impl GpioProc {
             write_count: 0,
             last_report_time: Instant::now(),
             start_time: Instant::now(),
-            dash_writer: dash::DashMessageSender::new()?
+            dash_writer: BusSender::new(DASH_PORT)?
         })
     }
 
@@ -81,8 +81,8 @@ impl GpioProc {
             if ind >= lpf.len() {
                 // Send processed frame over to dash
 
-                self.dash_writer.send(dash::DashMessage::LimbHistory(dash_pin_points))?;
-                self.dash_writer.send(dash::DashMessage::RmsHistory(dash_rms_points))?;
+                self.dash_writer.send(DashMessage::LimbHistory(dash_pin_points))?;
+                self.dash_writer.send(DashMessage::RmsHistory(dash_rms_points))?;
 
                 return Ok(());
             }
@@ -167,8 +167,9 @@ impl GpioProc {
         debug!("Waiting for messages.");
         loop {
             match self.rx.recv()? {
-                GpioMessage::NextFrame(lpf, hpf) => self.handle_frame(&lpf, &hpf)?,
-                _ => {}
+                Some(GpioMessage::NextFrame(lpf, hpf)) => self.handle_frame(&lpf, &hpf)?,
+                Some(GpioMessage::SetSampleRate(_rate)) => warn!("SetSampleRate not implemented"),
+                None => {}
             }
         }
     }
