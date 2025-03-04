@@ -9,8 +9,6 @@ use std::{
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::error::Error;
 
-pub const PARAM_ROOT: &str = "/tmp/billy";
-
 #[derive(Clone, Copy)]
 pub struct Parameter(&'static str, &'static str);
 
@@ -65,10 +63,10 @@ pub struct ParameterController {
 }
 
 impl ParameterController {
-    pub fn new(root: &Path) -> Result<Self, Box<dyn Error>> {
-        if !root.is_dir() {
-            std::fs::create_dir_all(root).expect("Failed to create parameter root");
-        }
+    pub fn new() -> Result<Self, Box<dyn Error>> {
+        init_param_dir()?;
+
+        let root = param_dir()?;
 
         let cache = Arc::new(RwLock::new(HashMap::new()));
         let active_watcher = Arc::new(Mutex::new(None));
@@ -97,7 +95,7 @@ impl ParameterController {
                 }
             })?;
 
-        root_watcher.watch(root, RecursiveMode::NonRecursive)?;
+        root_watcher.watch(&root, RecursiveMode::NonRecursive)?;
 
         Ok(Self {
             cache,
@@ -192,16 +190,34 @@ impl ParameterController {
                     .to_str()
                     .unwrap();
                 match e.kind {
-                    EventKind::Create(_) | EventKind::Modify(_) => {
+                    EventKind::Create(_) | EventKind::Modify(_) => 'skip: {
                         let value = std::fs::read_to_string(e.paths.iter().next().unwrap())
                             .unwrap()
                             .trim()
-                            .into();
+                            .to_string();
+
+                        if value.is_empty() {
+                            break 'skip;
+                        }
+
+                        let mut located = false;
+
+                        for p in ALL_PARAMS {
+                            if p.0 == fname {
+                                located = true;
+                                break;
+                            }
+                        }
+
+                        if !located {
+                            warn!("Detected update to unrecognized parameter: {fname}, caching anyway");
+                        }
 
                         debug!("Updated \"{fname}\" = \"{value}\"");
                         w_cache.write().unwrap().insert(fname.to_string(), value);
                     }
                     EventKind::Remove(_) => {
+                        debug!("Removed \"{fname}\"");
                         w_cache.write().unwrap().remove(fname);
                     }
                     _ => (),
@@ -250,13 +266,51 @@ impl ParameterController {
     }
 }
 
-pub fn set_track(track: &str) {
+pub fn init_param_dir() -> Result<(), Box<dyn Error>> {
+    let root = param_dir()?;
+    let link = root.join("current");
+    let defparams = root.join("default");
+
+    if !link.exists() {
+        std::os::unix::fs::symlink(root.join("default"), &link)?;
+    }
+
+    if !defparams.is_dir() {
+        std::fs::create_dir_all(&defparams)?;
+
+        for Parameter(pn, pv) in ALL_PARAMS {
+            std::fs::write(defparams.join(pn), pv)?;
+        }
+
+        debug!("Wrote {} default parameters", ALL_PARAMS.len());
+    }
+
+    Ok(())
+}
+
+pub fn param_dir() -> Result<PathBuf, Box<dyn Error>> {
+    let root = dirs::config_dir().unwrap().join("billy");
+
+    if !root.is_dir() {
+        std::fs::create_dir_all(&root)?;
+    }
+
+    Ok(root)
+}
+
+pub fn set_track(track: &str) -> Result<(), Box<dyn Error>> {
     // TODO: Move this behavior to the dbus watcher
-    let root = PathBuf::from(PARAM_ROOT);
+    let root = param_dir()?;
 
     std::fs::remove_file(root.join("current")).ok();
+    std::os::unix::fs::symlink(root.join(track), root.join("current"))?;
 
-    if let Err(e) = std::os::unix::fs::symlink(root.join(track), root.join("current")) {
-        warn!("Failed creating current track link: {:?}", e);
-    }
+    Ok(())
+}
+
+pub fn write_param(param: &Parameter, value: String) -> Result<(), Box<dyn Error>> {
+    let root = param_dir()?;
+    std::fs::write(root.join("current").join(param.0), value)?;
+
+    Ok(())
 }

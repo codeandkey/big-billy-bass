@@ -4,12 +4,13 @@ extern crate log;
 mod model;
 
 use color_eyre::Result;
-use common::dash::DashMessage;
+use common::bus::BusReceiver;
+use common::DashMessage;
 use common::param::*;
+use common::DASH_PORT;
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use model::{Limb, Model};
 use ratatui::Frame;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::{
     error::Error,
@@ -98,9 +99,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut term = ratatui::init();
     let stop = Arc::new(AtomicBool::new(false));
     let thr_stop = stop.clone();
-    let mut pc = ParameterController::new(&Path::new(PARAM_ROOT))?;
+    let mut pc = ParameterController::new()?;
 
-    let mut rx = common::dash::DashMessageReceiver::new()?;
+    let mut rx = BusReceiver::<DashMessage>::new(DASH_PORT)?;
     let model = Arc::new(Mutex::new(Model::new()));
     let thr_model = model.clone();
 
@@ -112,13 +113,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             match rx.recv() {
                 Ok(m) => match m {
-                    DashMessage::LimbHistory(frame) => {
+                    Some(DashMessage::LimbHistory(frame)) => {
                         thr_model.lock().unwrap().submit_dataset(model::Dataset::PinOut, frame)
                     },
-                    DashMessage::RmsHistory(frame) => {
+                    Some(DashMessage::RmsHistory(frame)) => {
                         thr_model.lock().unwrap().submit_dataset(model::Dataset::Rms, frame);
                     },
-                    _ => (),
+                    None => (),
                 },
                 Err(e) => {
                     warn!("Failed receiving message: {e}");
