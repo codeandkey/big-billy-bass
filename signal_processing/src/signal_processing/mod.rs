@@ -4,11 +4,11 @@ mod moving_rms;
 
 use std::path::Path;
 
-use audio_node::{PaSource, ReadResult};
+use audio_node::{PaNode, ReadResult};
 use biquad_filter::BiquadFilter;
-use common::param::*;
-use common::*;
+use common::{GpioMessageSender, param::*, *};
 use moving_rms::MovingRms;
+use rustfft::{FftPlanner, num_complex::Complex};
 
 const FILTER_Q: f32 = 0.707;
 
@@ -18,8 +18,9 @@ pub struct AudioNode {
     // second stage lpfs
     _lpf_rms: MovingRms,
     _hpf_rms: MovingRms,
+
     // pulse
-    _source: PaSource,
+    _source: PaNode,
 
     // gpio
     _gpio_handle: GpioMessageSender,
@@ -39,7 +40,7 @@ impl AudioNode {
             _lpf_rms: MovingRms::new(),
             _hpf_rms: MovingRms::new(),
 
-            _source: PaSource::new(app_name).unwrap(),
+            _source: PaNode::new(app_name).unwrap(),
 
             _gpio_handle: GpioMessageSender::new().unwrap(),
 
@@ -59,7 +60,7 @@ impl AudioNode {
         // read data
         let buff = match self._source.read()? {
             ReadResult::NotReady => return Ok(0),
-            ReadResult::Data(dat) => dat,
+            ReadResult::Data(dat) => dat.to_vec(),
         };
 
         if buff.len() == 0 {
@@ -67,14 +68,16 @@ impl AudioNode {
         }
 
         // apply filtering
-        let mut hpf: Vec<Sample> = Vec::with_capacity(buff.len() / 4);
-        let mut lpf: Vec<Sample> = Vec::with_capacity(buff.len() / 4);
+        let mut hpf = Vec::with_capacity(buff.len() / 4);
+        let mut lpf = Vec::with_capacity(buff.len() / 4);
+        let mut mono = Vec::with_capacity(buff.len() / 4);
 
         for chunk in buff.chunks_exact(4) {
             let s_1 = i16::from_le_bytes([chunk[0], chunk[1]]) as f32;
             let s_2 = i16::from_le_bytes([chunk[2], chunk[3]]) as f32;
             let s = (s_1 + s_2) / 2.0;
 
+            mono.push(s);
             hpf.push(self._hpf_rms.update(self._hpf.update(s)) as Sample);
             lpf.push(self._lpf_rms.update(self._lpf.update(s)) as Sample);
         }
@@ -82,12 +85,27 @@ impl AudioNode {
         // frames * (uS/S) / (frames / S)
         let sleep_time_us: u64 = lpf.len() as u64 * 1_000_000 / 44100;
 
+        self.fft(mono);
+
         // send to gpio
         self._gpio_handle
             .send(GpioMessage::NextFrame(lpf, hpf))
             .unwrap();
 
+        self._source.playback(&buff)?;
+
         self._source.drop()?;
+
         Ok(sleep_time_us)
+    }
+
+    fn fft(&self, data: Vec<f32>) -> Vec<f32> {
+        let mut buffer: Vec<Complex<f32>> = data.iter().map(|&s| Complex::new(s, 0.0)).collect();
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(buffer.len());
+
+        fft.process(&mut buffer);
+
+        buffer.iter().map(|c| c.norm()).collect()
     }
 }

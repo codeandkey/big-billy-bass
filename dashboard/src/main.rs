@@ -57,13 +57,13 @@ fn render(frame: &mut Frame, model: &Arc<Mutex<Model>>, pc: &mut ParameterContro
             .name("BTHR")
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(Style::default().cyan())
+            .style(Style::default().magenta())
             .data(&bthresh_ln),
         Dataset::default()
             .name("MTHR")
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line)
-            .style(Style::default().magenta())
+            .style(Style::default().cyan())
             .data(&mthresh_ln)
     ];
 

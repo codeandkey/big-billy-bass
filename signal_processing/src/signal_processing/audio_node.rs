@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use libpulse_binding::{
     callbacks::ListResult,
     context::{
@@ -11,9 +9,10 @@ use libpulse_binding::{
     operation::{self, State as OperationState},
     proplist::{self},
     sample::{Format, Spec},
-    stream::{FlagSet as StreamFlagSet, PeekResult, State as StreamState, Stream},
+    stream::{self, FlagSet as StreamFlagSet, PeekResult, State as StreamState, Stream},
 };
 use regex::Regex;
+use std::{cell::RefCell, rc::Rc};
 
 const DEFAULT_SPEC: Spec = Spec {
     channels: 2,
@@ -22,10 +21,11 @@ const DEFAULT_SPEC: Spec = Spec {
 };
 
 const SOURCE_FILTER: &str = "bluez_source\\..*\\.a2dp_source";
-pub struct PaSource {
+pub struct PaNode {
     _ml: Mainloop,
     _context: Context,
-    _stream: Stream,
+    _source_stream: Stream,
+    _sink_stream: Stream,
 
     _active_stream_ndx: Rc<RefCell<i32>>,
 }
@@ -35,7 +35,7 @@ pub enum ReadResult<'a> {
     NotReady,
 }
 
-impl PaSource {
+impl PaNode {
     pub fn new(app_name: &str) -> Result<Self, &'static str> {
         let mut props = proplist::Proplist::new().unwrap();
         props
@@ -80,10 +80,26 @@ impl PaSource {
         let strm = Stream::new(&mut ctx, "received_audio", &DEFAULT_SPEC, None)
             .expect("Failed to initialize stream");
 
+        // playback stream
+        let mut playback_stream = Stream::new(&mut ctx, "output_audio", &DEFAULT_SPEC, None)
+            .expect("Failed to create output stream");
+
+        // connect playback stream
+        playback_stream
+            .connect_playback(
+                None, // Default sink
+                None,
+                stream::FlagSet::START_CORKED,
+                None,
+                None,
+            )
+            .expect("Failed to connect playback stream");
+
         return Ok(Self {
             _ml: ml,
             _context: ctx,
-            _stream: strm,
+            _source_stream: strm,
+            _sink_stream: playback_stream,
 
             _active_stream_ndx: strm_ndx,
         });
@@ -97,19 +113,21 @@ impl PaSource {
                 return Ok(ReadResult::NotReady);
             }
         }
-        if !Self::iterate_ml_and_check(&mut self._ml, || Self::stream_is_ready(&self._stream))? {
+        if !Self::iterate_ml_and_check(&mut self._ml, || {
+            Self::stream_is_ready(&self._source_stream)
+        })? {
             return Ok(ReadResult::NotReady);
         };
         // read from stream
         return match self
-            ._stream
+            ._source_stream
             .peek()
             .or_else(|_| return Err("Can't peek audio!"))?
         {
             PeekResult::Empty => Ok(ReadResult::NotReady),
             PeekResult::Hole(_) => {
                 debug!("Hole in audio detected");
-                self._stream
+                self._source_stream
                     .discard()
                     .or_else(|_| Err("Cannot discard stream data!"))?;
                 Ok(ReadResult::NotReady)
@@ -126,14 +144,23 @@ impl PaSource {
                 return Ok(());
             }
         }
-        if !Self::iterate_ml_and_check(&mut self._ml, || Self::stream_is_ready(&self._stream))? {
+        if !Self::iterate_ml_and_check(&mut self._ml, || {
+            Self::stream_is_ready(&self._source_stream)
+        })? {
             return Ok(());
         };
 
         return self
-            ._stream
+            ._source_stream
             .discard()
             .or_else(|_| return Err("Can't peek audio!"));
+    }
+
+    pub fn playback(&mut self, chunk: &[u8]) -> Result<(), &'static str> {
+        self._sink_stream
+            .write(chunk, None, 0, stream::SeekMode::Relative)
+            .expect("playback failed");
+        Ok(())
     }
 
     fn connect_to_bluez_stream(&mut self) -> Result<(), &'static str> {
@@ -160,10 +187,10 @@ impl PaSource {
         }
 
         // create and connect new stream
-        self._stream =
+        self._source_stream =
             Stream::new(&mut self._context, "audio stream", &DEFAULT_SPEC, None).unwrap();
 
-        self._stream
+        self._source_stream
             .connect_record(
                 Some(&format!("{}", *self._active_stream_ndx.borrow())),
                 None,
@@ -181,7 +208,7 @@ impl PaSource {
             "Connected to stream index {}",
             self._active_stream_ndx.borrow()
         );
-        info!("{:?}", self._stream.get_sample_spec());
+        info!("{:?}", self._source_stream.get_sample_spec());
         Ok(())
     }
 
