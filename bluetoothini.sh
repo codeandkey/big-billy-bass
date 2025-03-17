@@ -47,11 +47,6 @@ ExecStart=/usr/bin/bt-agent -c NoInputNoOutput
 WantedBy=bluetooth.target" > /etc/systemd/system/bt-agent.service
 
 
-
-#start pulseaudio
-# echo "...starting pulseaudio"
-# pulseaudio --start
-
 # create agent
 echo "...creating bluetooth agent pulseaudio"
 sudo systemctl enable bt-agent
@@ -61,3 +56,4 @@ systemctl status bt-agent
 
 
 echo "Full install requries a restart!"
+

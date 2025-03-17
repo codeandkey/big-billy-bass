@@ -2,6 +2,7 @@
 extern crate log;
 
 mod model;
+mod view;
 
 use color_eyre::Result;
 use common::bus::BusReceiver;
@@ -9,7 +10,10 @@ use common::DashMessage;
 use common::param::*;
 use common::DASH_PORT;
 use crossterm::event::{Event, KeyCode, KeyEvent};
-use model::{Limb, Model};
+use model::Model;
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
 use ratatui::Frame;
 use std::sync::{Arc, Mutex};
 use std::{
@@ -18,81 +22,22 @@ use std::{
     time::Duration,
 };
 
-use ratatui::{
-    style::{Style, Stylize},
-    symbols,
-    widgets::{Axis, Block, Chart, Dataset, GraphType},
-};
-
 const FRAMERATE: u64 = 30;
 
 fn render(frame: &mut Frame, model: &Arc<Mutex<Model>>, pc: &mut ParameterController) {
-    let (body, bmin, bmax) = model.lock().unwrap().dataset(model::Dataset::Rms, Limb::Body);
-    let (mouth, mmin, mmax) = model.lock().unwrap().dataset(model::Dataset::Rms, Limb::Mouth);
+    let root_layout = Layout::new(Direction::Vertical, [
+        Constraint::Ratio(1, 2),
+        Constraint::Ratio(1, 2)
+    ]).split(frame.area());
 
-    let bthresh = pc.get::<u32>(&PARAM_BODY_THRESHOLD);
-    let mthresh = pc.get::<u32>(&PARAM_MOUTH_THRESHOLD);
+    let btm_layout = Layout::new(Direction::Horizontal, [
+        Constraint::Max(25),
+        Constraint::Fill(1)
+    ]).split(root_layout[1]);
 
-    let min = bmin.min(mmin);
-    let max = bmax.max(mmax);
-    let mid = min + (max - min) / 2.0;
-
-    let mthresh_ln = [(min, mthresh as f64), (max, mthresh as f64)];
-    let bthresh_ln = [(min, bthresh as f64), (max, bthresh as f64)];
-
-    // Create the datasets to fill the chart with
-    let datasets = vec![
-        Dataset::default()
-            .name("BRMS")
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
-            .style(Style::default().red())
-            .data(&body[..]),
-        Dataset::default()
-            .name("MRMS")
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
-            .style(Style::default().blue())
-            .data(&mouth[..]),
-        Dataset::default()
-            .name("BTHR")
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
-            .style(Style::default().magenta())
-            .data(&bthresh_ln),
-        Dataset::default()
-            .name("MTHR")
-            .marker(symbols::Marker::Braille)
-            .graph_type(GraphType::Line)
-            .style(Style::default().cyan())
-            .data(&mthresh_ln)
-    ];
-
-    // Create the X axis and define its properties
-    let x_axis = Axis::default()
-        .title("Elapsed (ms)".red())
-        .style(Style::default().white())
-        .bounds([min, max])
-        .labels([min.to_string(), max.to_string(), mid.to_string()]);
-
-    let n_ticks = 8;
-    let ymax = 16384;
-    let ticks = (0..(n_ticks+1)).map(|i| i * (ymax / n_ticks)).map(|x| x.to_string());
-
-    // Create the Y axis and define its properties
-    let y_axis = Axis::default()
-        .title("RMS".red())
-        .style(Style::default().white())
-        .bounds([0.0, 16384.0])
-        .labels(ticks);
-
-    // Create the chart and link all the parts together
-    let chart = Chart::new(datasets)
-        .block(Block::new().title("RMS"))
-        .x_axis(x_axis)
-        .y_axis(y_axis);
-
-    frame.render_widget(chart, frame.area());
+    view::limb_chart::render(frame, root_layout[0], model, pc);
+    view::paramctl::render(frame, btm_layout[0], pc);
+    view::fft_chart::render(frame, btm_layout[1], model, pc);
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -111,14 +56,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                 break;
             }
 
+            if let Err(e) = rx.timeout(100) {
+                warn!("Failed setting receiver timeout: {e}");
+            }
+
             match rx.recv() {
                 Ok(m) => match m {
                     Some(DashMessage::LimbHistory(frame)) => {
-                        thr_model.lock().unwrap().submit_dataset(model::Dataset::PinOut, frame)
+                        thr_model.lock().unwrap().submit_limb_data(model::LimbDataset::PinOut, frame)
                     },
                     Some(DashMessage::RmsHistory(frame)) => {
-                        thr_model.lock().unwrap().submit_dataset(model::Dataset::Rms, frame);
+                        thr_model.lock().unwrap().submit_limb_data(model::LimbDataset::Rms, frame);
                     },
+                    Some(DashMessage::FFTData(frame)) => {
+                        thr_model.lock().unwrap().submit_fft(frame);
+                    }
                     None => (),
                 },
                 Err(e) => {

@@ -1,8 +1,10 @@
-use std::collections::LinkedList;
+use circular_buffer::CircularBuffer;
 
+const HIST_SAMPLES: usize = 750;
 pub struct Model {
-    limb_hist: LinkedList<Vec<(u128, f32, f32)>>,
-    rms_hist: LinkedList<Vec<(u128, f32, f32)>>,
+    limb_hist: CircularBuffer<HIST_SAMPLES, (u128, f32, f32)>,
+    rms_hist: CircularBuffer<HIST_SAMPLES, (u128, f32, f32)>,
+    fft_frames: Vec<Vec<f32>>,
 }
 
 pub enum Limb {
@@ -10,67 +12,76 @@ pub enum Limb {
     Mouth,
 }
 
-pub enum Dataset {
+pub enum LimbDataset {
     Rms,
     PinOut,
 }
 
-const MAXFRAMES: usize = 40;
-
 impl Model {
     pub fn new() -> Self {
         Self {
-            limb_hist: LinkedList::new(),
-            rms_hist: LinkedList::new(),
+            limb_hist: CircularBuffer::new(),
+            rms_hist: CircularBuffer::new(),
+            fft_frames: Vec::new(),
         }
     }
 
-    pub fn submit_dataset(&mut self, set: Dataset, data: Vec<(u128, f32, f32)>) {
+    pub fn submit_limb_data(&mut self, set: LimbDataset, data: Vec<(u128, f32, f32)>) {
         let buf = match set {
-            Dataset::PinOut => &mut self.limb_hist,
-            Dataset::Rms => &mut self.rms_hist,
+            LimbDataset::PinOut => &mut self.limb_hist,
+            LimbDataset::Rms => &mut self.rms_hist,
         };
 
-        buf.push_front(data);
-
-        while buf.len() > MAXFRAMES {
-            buf.pop_back();
-        }
+        buf.extend(data);
     }
 
-    pub fn dataset(&self, set: Dataset, limb: Limb) -> (Vec<(f64, f64)>, f64, f64) {
-        let buf = match set {
-            Dataset::PinOut => &self.limb_hist,
-            Dataset::Rms => &self.rms_hist,
-        };
+    pub fn submit_fft(&mut self, data: Vec<f32>) {
+        self.fft_frames.push(data);
+    }
 
-        let fsize = match buf.front() {
-            Some(f) => f.len(),
-            None => return (vec![], 0.0, 0.0),
-        };
+    pub fn fft_data(&mut self) -> Vec<f32> {
+        if self.fft_frames.is_empty() {
+            return vec![];
+        }
 
-        let mut out = Vec::<(u128, f32)>::with_capacity(buf.len() * fsize);
-        let mut mintime = u128::max_value();
-        let mut maxtime = u128::min_value();
+        let mut out = vec![0f32; self.fft_frames[0].len()];
+        let n = self.fft_frames.len();
 
-        for f in buf {
-            for (t, b, m) in f {
-                mintime = mintime.min(*t);
-                maxtime = maxtime.max(*t);
-
-                let i = match limb {
-                    Limb::Body => b,
-                    Limb::Mouth => m
-                };
-
-                out.push((*t, *i));
+        for v in self.fft_frames.iter() {
+            for i in 0..v.len() {
+                out[i] += v[i] / (n as f32);
             }
         }
 
+        self.fft_frames.clear();
+        out
+    }
+
+    pub fn dataset(&self, set: LimbDataset, limb: Limb) -> (Vec<(f64, f64)>, f64, f64) {
+        let buf = match set {
+            LimbDataset::PinOut => &self.limb_hist,
+            LimbDataset::Rms => &self.rms_hist,
+        };
+
+        let (left, right) = buf.as_slices();
+        let data = [left, right].concat();
+
+        if data.len() == 0 {
+            return (vec![], 0.0, 1.0);
+        }
+
+        let limb_data: Vec<(f64, f64)> = match limb {
+            Limb::Body => data.iter().map(|(t, b, _m)| (*t as f64, *b as f64)).collect(),
+            Limb::Mouth => data.iter().map(|(t, _b, m)| (*t as f64, *m as f64)).collect(),
+        };
+
+        let mintime = limb_data.first().unwrap().0;
+        let maxtime = limb_data.last().unwrap().0;
+
         (
-            out.into_iter().map(|(t, x)| (t as f64, x as f64)).collect(),
-            mintime as f64,
-            maxtime as f64,
+            limb_data,
+            mintime,
+            maxtime
         )
     }
 }

@@ -1,111 +1,244 @@
-mod audio_node;
-mod biquad_filter;
-mod moving_rms;
+pub mod pa_node;
 
-use std::path::Path;
+use circular_buffer::CircularBuffer;
+use rustfft::num_complex::Complex;
+use std::f32::consts::PI;
 
-use audio_node::{PaNode, ReadResult};
-use biquad_filter::BiquadFilter;
-use common::{GpioMessageSender, param::*, *};
-use moving_rms::MovingRms;
-use rustfft::{FftPlanner, num_complex::Complex};
+const FF: usize = 3;
+const FB: usize = 2;
 
-const FILTER_Q: f32 = 0.707;
-
-pub struct AudioNode {
-    _hpf: BiquadFilter,
-    _lpf: BiquadFilter,
-    // second stage lpfs
-    _lpf_rms: MovingRms,
-    _hpf_rms: MovingRms,
-
-    // pulse
-    _source: PaNode,
-
-    // gpio
-    _gpio_handle: GpioMessageSender,
-
-    // config
-    _pc: ParameterController,
+pub enum FilterType {
+    LPF,
+    HPF,
 }
 
-impl AudioNode {
-    pub fn new(app_name: &str) -> Self {
-        let pc = ParameterController::new().unwrap();
-        Self {
-            _hpf: BiquadFilter::new_hpf(FILTER_Q, pc.get(PARAM_HPF_CUTOFF), 44100),
-            _lpf: BiquadFilter::new_lpf(FILTER_Q, pc.get(PARAM_LPF_CUTOFF), 44100),
+/// A structure for implementing a biquad filter.
+/// 
+/// Biquad Filter implimenation based on https://webaudio.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
+pub struct BiquadFilter {
+    q: f32,
+    cutoff: f32,
+    sample_rate: i32,
+    r#type: FilterType,
 
-            // moving RMS
-            _lpf_rms: MovingRms::new(),
-            _hpf_rms: MovingRms::new(),
+    // Data buffers
+    x: CircularBuffer<FF, f32>,
+    y: CircularBuffer<FB, f32>,
 
-            _source: PaNode::new(app_name).unwrap(),
+    // filter coefs
+    a: [f32; FB],
+    b: [f32; FF],
+}
 
-            _gpio_handle: GpioMessageSender::new().unwrap(),
-
-            _pc: pc,
-        }
-    }
-
-    pub fn update(&mut self) -> Result<u64, &'static str> {
-        // update filters
-        self._hpf.set_cutoff(self._pc.get(PARAM_HPF_CUTOFF));
-        self._lpf.set_cutoff(self._pc.get(PARAM_LPF_CUTOFF));
-        let rms_window_ms = self._pc.get::<f32>(PARAM_RMS_WINDOW_SIZE_MS);
-        let window_size = (44100.0 * rms_window_ms / 1000.0) as usize;
-        self._hpf_rms.set_size(window_size);
-        self._lpf_rms.set_size(window_size);
-
-        // read data
-        let buff = match self._source.read()? {
-            ReadResult::NotReady => return Ok(0),
-            ReadResult::Data(dat) => dat.to_vec(),
+impl BiquadFilter {
+    /// Creates a new instance of `BiquadFilter`.
+    ///
+    /// # Arguments
+    ///
+    /// * `q` - The Q factor of the filter.
+    /// * `cutoff` - The cutoff frequency of the filter.
+    /// * `sample_rate` - The sample rate of the audio signal.
+    /// * `filter_type` - The type of the filter (low-pass or high-pass).
+    ///
+    /// # Returns
+    ///
+    /// A new `BiquadFilter` instance.
+    ///
+    pub fn new(q: f32, cutoff: f32, sample_rate: i32, filter_type: FilterType) -> Self {
+        let mut temp = Self {
+            q,
+            cutoff,
+            sample_rate,
+            r#type: filter_type,
+            x: CircularBuffer::<FF, f32>::new(),
+            y: CircularBuffer::<FB, f32>::new(),
+            a: [0.0; FB],
+            b: [0.0; FF],
         };
 
-        if buff.len() == 0 {
-            return Ok(0);
-        }
-
-        // apply filtering
-        let mut hpf = Vec::with_capacity(buff.len() / 4);
-        let mut lpf = Vec::with_capacity(buff.len() / 4);
-        let mut mono = Vec::with_capacity(buff.len() / 4);
-
-        for chunk in buff.chunks_exact(4) {
-            let s_1 = i16::from_le_bytes([chunk[0], chunk[1]]) as f32;
-            let s_2 = i16::from_le_bytes([chunk[2], chunk[3]]) as f32;
-            let s = (s_1 + s_2) / 2.0;
-
-            mono.push(s);
-            hpf.push(self._hpf_rms.update(self._hpf.update(s)) as Sample);
-            lpf.push(self._lpf_rms.update(self._lpf.update(s)) as Sample);
-        }
-
-        // frames * (uS/S) / (frames / S)
-        let sleep_time_us: u64 = lpf.len() as u64 * 1_000_000 / 44100;
-
-        self.fft(mono);
-
-        // send to gpio
-        self._gpio_handle
-            .send(GpioMessage::NextFrame(lpf, hpf))
-            .unwrap();
-
-        self._source.playback(&buff)?;
-
-        self._source.drop()?;
-
-        Ok(sleep_time_us)
+        temp.update_coefs();
+        return temp;
     }
 
-    fn fft(&self, data: Vec<f32>) -> Vec<f32> {
-        let mut buffer: Vec<Complex<f32>> = data.iter().map(|&s| Complex::new(s, 0.0)).collect();
-        let mut planner = FftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(buffer.len());
-
-        fft.process(&mut buffer);
-
-        buffer.iter().map(|c| c.norm()).collect()
+    /// Creates a new low-pass filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `q` - The Q factor of the filter.
+    /// * `cutoff` - The cutoff frequency of the filter.
+    /// * `sample_rate` - The sample rate of the audio signal.
+    ///
+    /// # Returns
+    ///
+    /// A new `BiquadFilter` instance configured as a low-pass filter.
+    pub fn new_lpf(q: f32, cutoff: f32, sample_rate: i32) -> Self {
+        Self::new(q, cutoff, sample_rate, FilterType::LPF)
     }
+
+    /// Creates a new high-pass filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `q` - The Q factor of the filter.
+    /// * `cutoff` - The cutoff frequency of the filter.
+    /// * `sample_rate` - The sample rate of the audio signal.
+    ///
+    /// # Returns
+    ///
+    /// A new `BiquadFilter` instance configured as a high-pass filter.
+    pub fn new_hpf(q: f32, cutoff: f32, sample_rate: i32) -> Self {
+        Self::new(q, cutoff, sample_rate, FilterType::HPF)
+    }
+
+    /// updated the filter
+    ///
+    /// # Arguments
+    /// * `sample` - New sample to push into the filter buffers
+    ///
+    /// # Returns
+    ///
+    /// the output of the filter given the sample input
+    ///
+    pub fn update(&mut self, sample: f32) -> f32 {
+        self.x.push_front(sample);
+
+        let mut y = 0.0;
+        y += self.x.iter().zip(self.b).map(|(x, b)| x * b).sum::<f32>();
+        y -= self.y.iter().zip(self.a).map(|(y, a)| y * a).sum::<f32>();
+
+        self.y.push_front(y);
+        y
+    }
+
+    /// updates the filter cutoff frequency, in hz
+    pub fn set_cutoff(&mut self, cutoff: f32) {
+        self.cutoff = cutoff;
+        self.update_coefs();
+    }
+
+    /// biquad filter implimenation based on https://webaudio.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
+    ///
+    /// Takes self, and updates feed forward and feed back coeficients.
+    /// Only called internally after any filter parameters are ajdusted via setter methods
+    fn update_coefs(&mut self) {
+        let w0 = 2. * PI * self.cutoff / (self.sample_rate as f32);
+        let alpha = f32::sin(w0) / (2.0 * self.q);
+        let mut a = [0.0; 3];
+        let mut b = [0.0; 3];
+        match self.r#type {
+            FilterType::LPF => {
+                b[0] = (1.0 - f32::cos(w0)) / 2.0;
+                b[1] = b[0] * 2.0;
+                b[2] = b[0];
+                a[0] = 1.0 + alpha;
+                a[1] = -2.0 * f32::cos(w0);
+                a[2] = 1.0 - alpha;
+            }
+            FilterType::HPF => {
+                b[0] = (1.0 + f32::cos(w0)) / 2.0;
+                b[1] = -b[0] * 2.0;
+                b[2] = b[0];
+                a[0] = 1.0 + alpha;
+                a[1] = -2.0 * f32::cos(w0);
+                a[2] = 1.0 - alpha;
+            }
+        }
+        self.b[0] = b[0] / a[0];
+        self.b[1] = b[1] / a[0];
+        self.b[2] = b[2] / a[0];
+        self.a[0] = a[1] / a[0];
+        self.a[1] = a[2] / a[0];
+    }
+}
+
+use std::collections::VecDeque;
+use std::sync::Arc;
+
+/// A structure for calculating the moving root mean square (RMS) of a sequence of samples.
+///
+/// # Fields
+///
+/// * `running_sum` - The running sum of the squared samples.
+/// * `samples` - A deque containing the most recent samples.
+/// * `target_size` - The desired size of the sample buffer.
+///
+pub struct MovingRms {
+    running_sum: f32,
+    samples: VecDeque<f32>,
+    target_size: usize,
+}
+
+impl MovingRms {
+    /// Creates a new instance of `MovingRms`.
+    ///
+    /// This function initializes a new `MovingRms` instance with an empty sample buffer,
+    /// a running sum of zero, and a target size of zero.
+    ///
+    /// # Returns
+    ///
+    /// A new `MovingRms` instance.
+    pub fn new() -> Self {
+        Self {
+            running_sum: 0.0,
+            samples: VecDeque::new(),
+            target_size: 0,
+        }
+    }
+
+    /// Updates the moving RMS calculation with a new sample.
+    ///
+    /// # Arguments
+    ///
+    /// * `sample` - The new sample to be added to the moving RMS calculation.
+    ///
+    /// # Returns
+    ///
+    /// The current RMS value after adding the new sample.
+    pub fn update(&mut self, sample: f32) -> f32 {
+        self.samples.push_front(sample.powf(2.0));
+        self.running_sum += sample.powf(2.0);
+        self.set_size(self.target_size);
+        f32::sqrt(self.running_sum / self.target_size as f32)
+    }
+
+    /// Sets the target size for the moving RMS calculation.
+    ///
+    /// # Arguments
+    ///
+    /// * `target_size` - The desired size of the sample buffer.
+    ///
+    pub fn set_size(&mut self, target_size: usize) {
+        while target_size < self.samples.len() {
+            if let Some(sample) = self.samples.pop_back() {
+                self.running_sum -= sample;
+            }
+        }
+        self.target_size = target_size;
+    }
+}
+
+/// Performs an FFT on the given data and applies a window function.
+///
+/// # Arguments
+///
+/// * `_fft` - An `Arc` containing the FFT processor.
+/// * `data` - A vector of input data samples.
+///
+/// # Returns
+///
+/// A vector of the FFT result in decibels.
+///
+pub fn do_fft(_fft: Arc<dyn rustfft::Fft<f32>>, data: Vec<f32>) -> Vec<f32> {
+    let mut buffer: Vec<Complex<f32>> = data.iter().map(|&s| Complex::new(s, 0.0)).collect();
+    _fft.process(&mut buffer);
+
+    let mut out: Vec<f32> = buffer.iter().map(|c| c.norm_sqr()).collect();
+    let len = out.len();
+    for (i, sample) in out.iter_mut().enumerate() {
+        let window = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (len - 1) as f32).cos());
+        *sample *= window;
+    }
+    out.iter()
+        .map(|a| (20.0 * (a / (i16::MAX as f32).powf(2.0)).log10()))
+        .collect()
 }
