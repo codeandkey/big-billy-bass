@@ -10,36 +10,39 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::error::Error;
 
 #[derive(Clone, Copy)]
-pub struct Parameter(&'static str, &'static str);
+pub struct Parameter(pub &'static str, pub &'static str,pub f32, pub f32,pub f32); // name, def, min, max, incr
 
 // Width of the RMS window in seconds
-pub const PARAM_RMS_WINDOW_SIZE_MS: &Parameter = &Parameter("WindowSizeMs", "100");
+pub const PARAM_RMS_WINDOW_SIZE_MS: &Parameter =
+    &Parameter("WindowSizeMs", "100", 5.0, 200.0, 25.0);
 
 // Milliseconds between attempted head/tail movement swaps
-pub const PARAM_FLIP_INTERVAL: &Parameter = &Parameter("FlipInterval", "1000");
+pub const PARAM_FLIP_INTERVAL: &Parameter =
+    &Parameter("FlipInterval", "1000", 100.0, 100.0, 2000.0);
 
-// Effective sample rate of the current track
-// John: this will probably need to have to come from the pulseaudio libary and not the database
-pub const PARAM_SAMPLE_RATE: &Parameter = &Parameter("SampleRate", "44100");
+// latency fudge factor
+pub const PARAM_AUDIO_LATENCY: &Parameter = &Parameter("AudioLatencyMs", "250", 0.0, 1000.0, 50.0);
 
 // RMS thresholds at which to actuate the motors
-pub const PARAM_BODY_THRESHOLD: &Parameter = &Parameter("BodyThreshold", "5000");
-pub const PARAM_MOUTH_THRESHOLD: &Parameter = &Parameter("MouthThreshold", "5000");
+pub const PARAM_BODY_THRESHOLD: &Parameter =
+    &Parameter("BodyThreshold", "5000", 500.0, 20000.0, 100.0);
+pub const PARAM_MOUTH_THRESHOLD: &Parameter =
+    &Parameter("MouthThreshold", "5000", 500.0, 20000.0, 100.0);
 
 // PWM work factors for motor speed (0-1)
-pub const PARAM_BODY_SPEED: &Parameter = &Parameter("BodySpeed", "1.0");
-pub const PARAM_MOUTH_SPEED: &Parameter = &Parameter("MouthSpeed", "1.0");
+pub const PARAM_BODY_SPEED: &Parameter = &Parameter("BodySpeed", "1.0", 0.0, 1.0, 0.05);
+pub const PARAM_MOUTH_SPEED: &Parameter = &Parameter("MouthSpeed", "1.0", 0.0, 1.0, 0.05);
 
 // LPF, HPF cutoff settings
-pub const PARAM_HPF_CUTOFF: &Parameter = &Parameter("HpfCutoff", "5000.0");
-pub const PARAM_LPF_CUTOFF: &Parameter = &Parameter("LpfCutoff", "1000.0");
+pub const PARAM_HPF_CUTOFF: &Parameter = &Parameter("HpfCutoff", "5000.0", 20.0, 20000.0, 100.0);
+pub const PARAM_LPF_CUTOFF: &Parameter = &Parameter("LpfCutoff", "1000.0", 20.0, 20000.0, 100.0);
 
 // Time in seconds to hold the mouth open or closed before releasing the motor
-pub const PARAM_MOUTH_FWD_HOLD: &Parameter = &Parameter("MouthFwdHold", "0.1");
-pub const PARAM_MOUTH_BWD_HOLD: &Parameter = &Parameter("MouthBwdHold", "0.1");
+pub const PARAM_MOUTH_FWD_HOLD: &Parameter = &Parameter("MouthFwdHold", "0.1", 0.0, 0.3, 0.05);
+pub const PARAM_MOUTH_BWD_HOLD: &Parameter = &Parameter("MouthBwdHold", "0.1", 0.0, 0.3, 0.05);
 
 // Maximum GPIO / dash processing rate
-pub const PARAM_GPIO_RATE: &Parameter = &Parameter("GpioRate", "250");
+pub const PARAM_GPIO_RATE: &Parameter = &Parameter("GpioRate", "250", 100.0, 500.0, 25.0);
 
 pub const ALL_PARAMS: &[&Parameter] = &[
     PARAM_BODY_SPEED,
@@ -53,7 +56,7 @@ pub const ALL_PARAMS: &[&Parameter] = &[
     PARAM_MOUTH_SPEED,
     PARAM_MOUTH_THRESHOLD,
     PARAM_RMS_WINDOW_SIZE_MS,
-    PARAM_SAMPLE_RATE,
+    PARAM_AUDIO_LATENCY,
 ];
 
 pub struct ParameterController {
@@ -112,16 +115,13 @@ impl ParameterController {
         let defparams = link.parent().unwrap().join("default");
 
         debug!("Initializing default link");
-        std::os::unix::fs::symlink(
-            &defparams,
-            link
-        )?;
+        std::os::unix::fs::symlink(&defparams, link)?;
 
         if !defparams.is_dir() {
             debug!("Writing {} params to default store", ALL_PARAMS.len());
             std::fs::create_dir_all(&defparams)?;
 
-            for Parameter(pn, pv) in ALL_PARAMS {
+            for Parameter(pn, pv, _, _, _) in ALL_PARAMS {
                 std::fs::write(defparams.join(pn), pv)?;
             }
         }
@@ -210,7 +210,9 @@ impl ParameterController {
                         }
 
                         if !located {
-                            warn!("Detected update to unrecognized parameter: {fname}, caching anyway");
+                            warn!(
+                                "Detected update to unrecognized parameter: {fname}, caching anyway"
+                            );
                         }
 
                         debug!("Updated \"{fname}\" = \"{value}\"");
@@ -233,7 +235,7 @@ impl ParameterController {
         Ok(())
     }
 
-    pub fn get<T>(&self, Parameter(k, def): &Parameter) -> T
+    pub fn get<T>(&self, Parameter(k, def, _, _, _): &Parameter) -> T
     where
         T: FromStr,
         <T as FromStr>::Err: std::fmt::Debug,
@@ -278,7 +280,7 @@ pub fn init_param_dir() -> Result<(), Box<dyn Error>> {
     if !defparams.is_dir() {
         std::fs::create_dir_all(&defparams)?;
 
-        for Parameter(pn, pv) in ALL_PARAMS {
+        for Parameter(pn, pv, _, _, _) in ALL_PARAMS {
             std::fs::write(defparams.join(pn), pv)?;
         }
 

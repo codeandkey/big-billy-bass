@@ -31,8 +31,8 @@ pub fn render(
         .map(|i| fft_logmin + i as f64 * (fft_logmax - fft_logmin) / (fft_n_xticks as f64))
         .collect();
 
-    let s_rate = pc.get::<u32>(&PARAM_SAMPLE_RATE);
-    let fft_yraw = dynamic_moving_average(&model.lock().unwrap().fft_data().clone(), 1000);
+    let s_rate = 44100;
+    let fft_yraw = model.lock().unwrap().fft_data().clone();
     let fft_xraw = compute_frequency_bins(s_rate as f32, fft_yraw.len());
     let fft_data: Vec<(f64, f64)> = fft_xraw
         .iter()
@@ -95,21 +95,4 @@ pub fn render(
         .legend_position(Some(ratatui::widgets::LegendPosition::TopRight));
 
     frame.render_widget(fft_chart, rect);
-}
-
-fn dynamic_moving_average(vec: &Vec<f32>, k: usize) -> Vec<f32> {
-    let total_size = vec.len();
-
-    (0..total_size) // Iterate over indices (1-based)
-        .map(|n| {
-            let window_size = (n * n / vec.len() / vec.len() * k).max(1).min(n); // Compute dynamic window size
-
-            let end_index = n;
-            let start_index = end_index - window_size;
-            let sum = vec[start_index..end_index].iter().sum::<f32>();
-            Some(sum / (end_index - start_index) as f32) // Compute average
-        })
-        .take_while(|x| x.is_some()) // Stop iteration when window size is too large
-        .flatten() // Remove None values
-        .collect()
 }

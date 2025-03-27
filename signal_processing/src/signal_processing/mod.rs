@@ -13,7 +13,7 @@ pub enum FilterType {
 }
 
 /// A structure for implementing a biquad filter.
-/// 
+///
 /// Biquad Filter implimenation based on https://webaudio.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
 pub struct BiquadFilter {
     q: f32,
@@ -228,17 +228,25 @@ impl MovingRms {
 ///
 /// A vector of the FFT result in decibels.
 ///
-pub fn do_fft(_fft: Arc<dyn rustfft::Fft<f32>>, data: Vec<f32>) -> Vec<f32> {
-    let mut buffer: Vec<Complex<f32>> = data.iter().map(|&s| Complex::new(s, 0.0)).collect();
-    _fft.process(&mut buffer);
-
-    let mut out: Vec<f32> = buffer.iter().map(|c| c.norm_sqr()).collect();
-    let len = out.len();
-    for (i, sample) in out.iter_mut().enumerate() {
+pub fn do_fft(_fft: Arc<dyn rustfft::Fft<f32>>, mut data: Vec<f32>) -> Vec<f32> {
+    // ham the window
+    let len = data.len();
+    let mut ham_sum = 0.0;
+    for (i, sample) in data.iter_mut().enumerate() {
         let window = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (len - 1) as f32).cos());
         *sample *= window;
+        ham_sum += window;
     }
-    out.iter()
-        .map(|a| (20.0 * (a / (i16::MAX as f32).powf(2.0)).log10()))
+
+    let mut buffer: Vec<Complex<f32>> = data.iter().map(|&s| Complex::new(s, 0.0)).collect();
+
+    // do fft
+    _fft.process(&mut buffer);
+
+    // normalize fft
+
+    buffer
+        .iter()
+        .map(|a| (20.0 * (a.norm() * 2.0 / ham_sum / ((i16::MAX / 4 * 3) as f32)).log10()))
         .collect()
 }

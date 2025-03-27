@@ -1,3 +1,4 @@
+use circular_buffer::CircularBuffer;
 use common::param::{ParameterController, *};
 use libpulse_binding::{
     callbacks::ListResult,
@@ -5,10 +6,10 @@ use libpulse_binding::{
         Context, FlagSet as ContextFlagSet, State as ContextState,
         subscribe::{Facility, InterestMaskSet, Operation as Opcode},
     },
-    def::BufferAttr,
     mainloop::standard::Mainloop,
     sample::{Format, Spec},
     stream::{FlagSet as StreamFlagSet, PeekResult, SeekMode, Stream},
+    volume,
 };
 use regex::Regex;
 use std::{cell::RefCell, error::Error, rc::Rc};
@@ -24,8 +25,6 @@ enum StreamType {
 }
 
 const SOURCE_FILTER: &str = "bluez_source\\..*\\.a2dp_source";
-// fudge factor for equivilence when setting the buffer attribute of a stream in pulse audio
-const LATENCY_FUDGE_FACTOR: u32 = 5;
 
 /// Struct containing pulse audio data structures. Keeps track of the context, mainloop, and active sink/source streams.
 pub struct PaNode {
@@ -91,6 +90,22 @@ impl PaNode {
         })
     }
 
+    /// Creates a new Pulse audio "node" instance, with the read callback set via `set_read_callback()`. The node is set up to
+    /// actively search for bluez sources devices and set up source-output link
+    /// from said sources. A playback stream with a default device is created so the PA server can
+    /// determine which output devices to send the stream to.
+    ///
+    /// # Returns
+    /// A new `PaNode` reference, wrapped in a result
+    pub fn new_w_callback<F>(cb: F) -> Result<Rc<RefCell<Self>>, Box<dyn Error>>
+    where
+        F: FnMut(Vec<i16>, Vec<i16>) + 'static,
+    {
+        let node = Self::new_ref()?;
+        Self::set_read_callback(&node, Rc::new(RefCell::new(cb)))?;
+        Ok(node)
+    }
+
     /// Creates a new Pulse audio "node" instance. The node is set up to
     /// actively search for bluez sources devices and set up source-output link
     /// from said sources. A playback stream with a default device is created so the PA server can
@@ -113,14 +128,14 @@ impl PaNode {
     /// 1) The stream is read from, and the bytes are converted to PCM_S16 data
     /// 2) PCM data is passed to the user callback
     /// 3) the PCM data is passed to the sink stream.
-    /// 
+    ///
     /// The sink stream is configured for additional latency based on the RMS window size in side the read callback.
-    /// 
+    ///
     /// The user callback should take a `Vec<i16>`. This may be interpreted as PCM16 interleaved two-channel data.
-    /// 
+    ///
     /// # Arguments
     /// * `node` - Reference to a `Rc<RefCell<PaNode>>`
-    /// * `cb` - user callback wrapped in an `Rc<RefCell<FnMut(Vec<i16>) + static>>`
+    /// * `cb` - user callback wrapped in an `Rc<RefCell<FnMut(Vec<i16>,Vec<i16>) + static>>`
     ///
     /// # Returns
     /// Returns an empty result on success
@@ -130,7 +145,7 @@ impl PaNode {
         cb: Rc<RefCell<F>>,
     ) -> Result<(), Box<dyn Error>>
     where
-        F: FnMut(Vec<i16>) + 'static,
+        F: FnMut(Vec<i16>, Vec<i16>) + 'static,
     {
         // first do a quick check of available sources to connect to
         Self::refresh_sources(
@@ -202,13 +217,15 @@ impl PaNode {
         stream: Rc<RefCell<Option<Stream>>>,
         sink: Rc<RefCell<Option<Stream>>>,
         cb: Rc<RefCell<F>>,
-    ) -> Result<(), Box<dyn Error>>
+    ) -> Result<Option<u32>, Box<dyn Error>>
     where
-        F: FnMut(Vec<i16>) + 'static,
+        F: FnMut(Vec<i16>, Vec<i16>) + 'static,
     {
-        let source_pattern = Regex::new(SOURCE_FILTER).unwrap();
+        let source_pattern = Regex::new(SOURCE_FILTER)?;
         // Fetch sources
         let ctx_clone = Rc::clone(&ctx);
+        let source_index = Rc::new(RefCell::new(None));
+        let source_index_ret = Rc::clone(&source_index);
         ctx.borrow().introspect().get_source_info_list({
             let source_pattern = source_pattern.clone();
             move |info| {
@@ -218,7 +235,8 @@ impl PaNode {
                         return;
                     }
                     info!(
-                        "Detected new source: [{}] {}",
+                        "Detected new source: #{} [{}] {}",
+                        info.index,
                         info.description.as_ref().unwrap(),
                         source_name
                     );
@@ -228,12 +246,18 @@ impl PaNode {
                         &mut *ctx_clone.borrow_mut(),
                     );
 
-                    Self::_set_stream_cb(Rc::clone(&stream), Rc::clone(&sink), Rc::clone(&cb))
-                        .unwrap();
+                    Self::_set_stream_cb(
+                        Rc::clone(&stream),
+                        Rc::clone(&sink),
+                        Rc::clone(&ctx_clone),
+                        Rc::clone(&cb),
+                        info.index,
+                    )
+                    .unwrap();
                 }
             }
         });
-        Ok(())
+        Ok(*source_index_ret.borrow())
     }
 
     /// Private helper to streamline creating a pulse audio stream
@@ -263,65 +287,86 @@ impl PaNode {
     /// 2) PCM data is passed to the user callback
     /// 3) the PCM data is passed to the sink stream.
     ///
-    /// Due to latency/phase shift induced from the moving RMS window in the main, the
-    /// sink buffer size is adjusted to account for a phase shift as well.
+    /// Due to latency/phase shift induced from the moving RMS window in the main, a buffering
+    /// mechanism is used to account for a phase shift as well.
     fn _set_stream_cb<F>(
         source_ref: Rc<RefCell<Option<Stream>>>,
         sink_ref: Rc<RefCell<Option<Stream>>>,
+        ctx_ref: Rc<RefCell<Context>>,
         user_cb: Rc<RefCell<F>>,
+        source_index: u32,
     ) -> Result<(), Box<dyn Error>>
     where
-        F: FnMut(Vec<i16>) + 'static,
+        F: FnMut(Vec<i16>, Vec<i16>) + 'static,
     {
         if let Some(source) = source_ref.borrow_mut().as_mut() {
             let read_ref = Rc::clone(&source_ref);
-            let pc = ParameterController::new()?;
-            let mut delay_stored: bool = false;
-            let mut delay_default: u32 = 0;
+            let pc = Rc::new(RefCell::new(ParameterController::new().unwrap()));
+            let buff_size_bytes = {
+                let pc = Rc::clone(&pc);
+                move || {
+                    ((44100 * pc.borrow().get::<u32>(PARAM_AUDIO_LATENCY) / 1000) as u32
+                        + (44100.0 * pc.borrow().get::<f32>(PARAM_RMS_WINDOW_SIZE_MS) / 1000.0)
+                            as u32)
+                        * 4
+                }
+            };
+
+            let latency_buffer = Rc::new(RefCell::new(LatencyBuffer::new(buff_size_bytes())));
+            let volume_scale = Rc::new(RefCell::new(1.0));
 
             source.set_read_callback(Some(Box::new(move |_| {
                 let mut binding = read_ref.borrow_mut();
                 let stream = binding.as_mut().unwrap();
+
+                Self::get_source_volume(
+                    source_index,
+                    Rc::clone(&ctx_ref),
+                    Rc::clone(&volume_scale),
+                );
+
                 match stream.peek().unwrap() {
                     // convert bytes into PCM 16 data per the default spec
                     PeekResult::Data(bytes) => {
-                        let mut output = Vec::<i16>::with_capacity(bytes.len() / 2);
-                        for chunk in bytes.chunks(2) {
-                            output.push(i16::from_le_bytes([chunk[0], chunk[1]]));
-                        }
-                        user_cb.borrow_mut()(output);
+                        let mut buffer = latency_buffer.borrow_mut();
 
-                        if let Some(sink) = sink_ref.borrow_mut().as_mut() {
-                            let attr = sink.get_buffer_attr().unwrap();
-                            let rms_window_ms = pc.get::<f32>(PARAM_RMS_WINDOW_SIZE_MS);
-                            let window_size = (44100.0 * rms_window_ms / 1000.0) as u32;
-                            if !delay_stored {
-                                delay_default = attr.tlength;
-                                delay_stored = true;
-                            }
+                        buffer.as_mut().unwrap().target_bytes = buff_size_bytes();
 
-                            // tweak latency if it has moved outside of our target
-                            if attr.tlength.abs_diff(delay_default + window_size * 3 / 4)
-                                > LATENCY_FUDGE_FACTOR
-                            {
-                                debug!(
-                                    "Adjusting latency to {} samples (from {})",
-                                    (delay_default + window_size * 3 / 4),
-                                    attr.tlength
+                        if let Some(delayed_bytes) = buffer.as_mut().unwrap().push_bytes(bytes) {
+                            let volume = if *volume_scale.borrow() <= 0.01 {
+                                0.0
+                            } else {
+                                1.0 / *volume_scale.borrow()
+                            };
+
+                            let output = bytes
+                                .chunks(2)
+                                .map(|chunk| {
+                                    (i16::from_le_bytes([chunk[0], chunk[1]]) as f32 * volume)
+                                        as i16
+                                })
+                                .collect();
+
+                            let audio_output = delayed_bytes
+                                .chunks(2)
+                                .map(|chunk| {
+                                    (i16::from_le_bytes([chunk[0], chunk[1]]) as f32 * volume)
+                                        as i16
+                                })
+                                .collect();
+
+                            // user callback
+                            user_cb.borrow_mut()(output, audio_output);
+                            if let Some(sink) = sink_ref.borrow_mut().as_mut() {
+                                // tweak latency
+
+                                _ = sink.write(
+                                    delayed_bytes.as_slice(),
+                                    None,
+                                    0,
+                                    SeekMode::Relative,
                                 );
-                                let new_attr = BufferAttr {
-                                    maxlength: attr.maxlength,
-                                    minreq: attr.minreq,
-                                    prebuf: attr.prebuf,
-                                    fragsize: attr.fragsize,
-
-                                    tlength: delay_default + window_size * 3 / 4,
-                                };
-
-                                sink.set_buffer_attr(&new_attr, |_| {});
                             }
-
-                            _ = sink.write(bytes, None, 0, SeekMode::Relative);
                         }
                         stream.discard().unwrap();
                     }
@@ -333,5 +378,55 @@ impl PaNode {
             })));
         }
         Ok(())
+    }
+
+    fn get_source_volume(index: u32, ctx: Rc<RefCell<Context>>, volume: Rc<RefCell<f32>>) {
+        ctx.borrow()
+            .introspect()
+            .get_source_info_by_index(index, move |list_result| {
+                if let ListResult::Item(info) = list_result {
+                    if *volume.borrow()
+                        != info.volume.avg().0 as f32 / volume::Volume::NORMAL.0 as f32
+                    {
+                        debug!(
+                            "Volume scalar updated {}",
+                            volume::Volume::NORMAL.0 as f32 / info.volume.avg().0 as f32
+                        );
+                    }
+                    *volume.borrow_mut() =
+                        info.volume.avg().0 as f32 / volume::Volume::NORMAL.0 as f32;
+                }
+            });
+    }
+}
+
+struct LatencyBuffer {
+    buff: CircularBuffer<{ 44100 * 4 }, u8>,
+    target_bytes: u32,
+}
+
+impl LatencyBuffer {
+    fn new(target_bytes: u32) -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            buff: CircularBuffer::<{ 44100 * 4 }, u8>::new(),
+            target_bytes,
+        })
+    }
+
+    fn push_bytes(&mut self, bytes: &[u8]) -> Option<Vec<u8>> {
+        // ensure size is correct
+        self.buff.truncate_back(self.target_bytes as usize);
+
+        self.buff.extend_from_slice(bytes);
+
+        if self.buff.len() < self.target_bytes as usize {
+            return None;
+        }
+
+        let mut out = Vec::with_capacity(bytes.len());
+        for _ in 0..bytes.len() {
+            out.push(self.buff.pop_front()?);
+        }
+        Some(out)
     }
 }

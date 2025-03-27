@@ -3,8 +3,8 @@ extern crate log;
 
 use serde::{Deserialize, Serialize};
 
-pub mod param;
 pub mod bus;
+pub mod param;
 
 pub type Sample = i16;
 
@@ -22,4 +22,5 @@ pub enum GpioMessage {
 pub enum DashMessage {
     LimbHistory(Vec<(u128, f32, f32)>),
     RmsHistory(Vec<(u128, f32, f32)>),
+    FFTData(Vec<f32>),
 }

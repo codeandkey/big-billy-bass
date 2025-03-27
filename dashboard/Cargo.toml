@@ -10,3 +10,4 @@ common = { path="../common", version="0.1.0"}
 crossterm = "0.28.1"
 log = "0.4.26"
 ratatui = "0.29.0"
+rustfft = "6.2.0"

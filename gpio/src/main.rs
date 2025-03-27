@@ -50,7 +50,7 @@ impl GpioProc {
         let f_start = Instant::now();
         let mut ctr = 0;
 
-        let s_rate = self.pc.get::<u32>(&PARAM_SAMPLE_RATE);
+        let s_rate = 44100;
         let f_rate = self.pc.get::<u32>(&PARAM_GPIO_RATE);
         let report_elapsed = self.last_report_time.elapsed().as_secs_f32();
 
