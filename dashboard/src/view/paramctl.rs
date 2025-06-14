@@ -2,11 +2,11 @@ use common::param::*;
 use ratatui::{
     Frame,
     layout::Rect,
-    widgets::{Block, Borders, List, ListDirection},
+    widgets::{List, ListDirection},
 };
 
 pub fn render(frame: &mut Frame, rect: Rect, pc: &mut ParameterController) {
-    let block = Block::new().title("PARAMS").borders(Borders::ALL);
+    // let block = Block::new().title("PARAMS").borders(Borders::ALL);
 
     let paramlist = ALL_PARAMS
         .iter()

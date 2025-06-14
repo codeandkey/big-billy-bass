@@ -2,7 +2,10 @@
 extern crate log;
 
 pub mod gpio;
-use common::bus::{BusReceiver, BusSender};
+use common::{
+    bus::{BusReceiver, BusSender},
+    sp::MovingRms,
+};
 use gpio::limb::{Direction, Limb};
 use gpio::pin::{LogicPin, PwmPin};
 
@@ -26,6 +29,10 @@ pub struct GpioProc {
     start_time: Instant,
     write_count: u64,
     dash_writer: BusSender<DashMessage>,
+    am_body_rms: MovingRms,
+    am_mouth_rms: MovingRms,
+    mouth_thresh: f32,
+    body_thresh: f32,
 }
 
 impl GpioProc {
@@ -40,7 +47,11 @@ impl GpioProc {
             write_count: 0,
             last_report_time: Instant::now(),
             start_time: Instant::now(),
-            dash_writer: BusSender::new(DASH_PORT)?
+            dash_writer: BusSender::new(DASH_PORT)?,
+            am_body_rms: MovingRms::new_w_size(44100 / 200),
+            am_mouth_rms: MovingRms::new_w_size(44100 / 200),
+            mouth_thresh: 0.0,
+            body_thresh: 0.0,
         })
     }
 
@@ -54,12 +65,12 @@ impl GpioProc {
         let f_rate = self.pc.get::<u32>(&PARAM_GPIO_RATE);
         let report_elapsed = self.last_report_time.elapsed().as_secs_f32();
 
-        let mut dash_pin_points = Vec::<(u128, f32, f32)>::with_capacity(
-            (lpf.len() as u32 * f_rate / s_rate) as usize
+        let mut dash_pin_points = Vec::<(u128, f32, f32, f32, f32)>::with_capacity(
+            (lpf.len() as u32 * f_rate / s_rate) as usize,
         );
 
-        let mut dash_rms_points = Vec::<(u128, f32, f32)>::with_capacity(
-            (lpf.len() as u32 * f_rate / s_rate) as usize
+        let mut dash_rms_points = Vec::<(u128, f32, f32, f32, f32)>::with_capacity(
+            (lpf.len() as u32 * f_rate / s_rate) as usize,
         );
 
         if report_elapsed > REPORT_TIME_S {
@@ -81,8 +92,10 @@ impl GpioProc {
             if ind >= lpf.len() {
                 // Send processed frame over to dash
 
-                self.dash_writer.send(DashMessage::LimbHistory(dash_pin_points))?;
-                self.dash_writer.send(DashMessage::RmsHistory(dash_rms_points))?;
+                self.dash_writer
+                    .send(DashMessage::LimbHistory(dash_pin_points))?;
+                self.dash_writer
+                    .send(DashMessage::RmsHistory(dash_rms_points))?;
 
                 return Ok(());
             }
@@ -93,14 +106,21 @@ impl GpioProc {
             dash_pin_points.push((
                 self.start_time.elapsed().as_millis(),
                 self.limb_body.get_actuation(),
-                self.limb_mouth.get_actuation()
+                self.limb_mouth.get_actuation(),
+                0.0,
+                0.0,
             ));
 
             dash_rms_points.push((
                 self.start_time.elapsed().as_millis(),
                 lpf[ind] as f32,
                 hpf[ind] as f32,
+                self.body_thresh,
+                self.mouth_thresh,
             ));
+
+            self.pc.set(PARAM_BODY_THRESHOLD, self.body_thresh)?;
+            self.pc.set(PARAM_MOUTH_THRESHOLD, self.mouth_thresh)?;
 
             spin_sleep::sleep(Duration::from_micros((1_000_000 / f_rate.max(1)).into()));
         }
@@ -114,16 +134,24 @@ impl GpioProc {
         self.write_count += 1;
 
         let body_speed = self.pc.get(PARAM_BODY_SPEED);
-        let body_thresh = self.pc.get(PARAM_BODY_THRESHOLD);
+
+        if self.pc.get(PARAM_AUTO_MODE) {
+            let thresh: f32 = self.pc.get(PARAM_AUTO_MODE_THRESH);
+            self.body_thresh = (self.am_mouth_rms.update(rms.0) * thresh / 100.0).max(100.0);
+            self.mouth_thresh = (self.am_body_rms.update(rms.1) * thresh / 100.0).max(100.0);
+        } else {
+            self.mouth_thresh = self.pc.get(PARAM_MOUTH_THRESHOLD);
+            self.body_thresh = self.pc.get(PARAM_BODY_THRESHOLD);
+        }
 
         self.limb_body.move_speed(body_speed);
 
-        if rms.0 >= body_thresh {
+        if rms.0 >= self.body_thresh {
             self.limb_body.apply(self.body_direction);
             if c % 200 == 0 {
                 trace!(
                     "body lpf {:6} >= {:6}, apply spd {:3} dir {:?}",
-                    rms.0, body_thresh, body_speed, self.body_direction
+                    rms.0, self.body_thresh, body_speed, self.body_direction
                 );
             }
         } else {
@@ -131,7 +159,7 @@ impl GpioProc {
             if c % 200 == 0 {
                 trace!(
                     "body lpf {:6} <  {:6}, apply spd {:3} dir None",
-                    rms.0, body_thresh, body_speed
+                    rms.0, self.body_thresh, body_speed
                 );
             }
 
@@ -154,7 +182,7 @@ impl GpioProc {
             .backward_hold(Some(self.pc.get(PARAM_MOUTH_BWD_HOLD)));
         self.limb_mouth.move_speed(self.pc.get(PARAM_MOUTH_SPEED));
 
-        if rms.1 > self.pc.get(PARAM_MOUTH_THRESHOLD) {
+        if rms.1 > self.mouth_thresh {
             self.limb_mouth.apply(Direction::Forward);
         } else {
             self.limb_mouth.apply(Direction::Backward);

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod bus;
 pub mod param;
+pub mod sp;
 
 pub type Sample = i16;
 
@@ -20,7 +21,7 @@ pub enum GpioMessage {
 
 #[derive(Serialize, Deserialize)]
 pub enum DashMessage {
-    LimbHistory(Vec<(u128, f32, f32)>),
-    RmsHistory(Vec<(u128, f32, f32)>),
+    LimbHistory(Vec<(u128, f32, f32, f32, f32)>),
+    RmsHistory(Vec<(u128, f32, f32, f32, f32)>),
     FFTData(Vec<f32>),
 }

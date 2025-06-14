@@ -5,12 +5,12 @@ mod signal_processing;
 use std::{cell::RefCell, error::Error, rc::Rc, sync::Arc};
 
 use circular_buffer::CircularBuffer;
-use common::{bus::*, param::*, *};
+use common::{sp::*, bus::*, param::*, *};
 use rustfft::FftPlanner;
-use signal_processing::{BiquadFilter, MovingRms, pa_node::PaNode};
+use signal_processing::{BiquadFilter, pa_node::PaNode};
 
 const FILTER_Q: f32 = 0.707;
-const MIN_FFT_SIZE: usize = 44100 / 20 * 4 / 3;
+const MIN_FFT_SIZE: usize = 44100 / 20;
 
 fn main() -> Result<(), Box<dyn Error>> {
     unsafe {
@@ -44,17 +44,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // set up pulse audio
     let audio_node = PaNode::new_w_callback(move |pcm_data, delayed_pcm_data| {
+        let rms_window_ms = pc.get::<f32>(PARAM_RMS_WINDOW_SIZE_MS);
+        let window_size = (44100.0 * rms_window_ms / 1000.0) as usize;
+        let data_len = pcm_data.len() / 2;
         // update params
         lpf.set_cutoff(pc.get(PARAM_LPF_CUTOFF));
         hpf.set_cutoff(pc.get(PARAM_HPF_CUTOFF));
-        let rms_window_ms = pc.get::<f32>(PARAM_RMS_WINDOW_SIZE_MS);
-        let window_size = (44100.0 * rms_window_ms / 1000.0) as usize;
+
         hpf_rms.set_size(window_size);
         lpf_rms.set_size(window_size);
 
         // create buffers
-        let mut hpf_buf: Vec<i16> = Vec::with_capacity(pcm_data.len() / 2);
-        let mut lpf_buf: Vec<i16> = Vec::with_capacity(pcm_data.len() / 2);
+        let mut hpf_buf: Vec<i16> = Vec::with_capacity(data_len);
+        let mut lpf_buf: Vec<i16> = Vec::with_capacity(data_len);
 
         // apply filtering
         pcm_data

@@ -10,18 +10,28 @@ use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::error::Error;
 
 #[derive(Clone, Copy)]
-pub struct Parameter(pub &'static str, pub &'static str,pub f32, pub f32,pub f32); // name, def, min, max, incr
+pub struct Parameter(
+    pub &'static str,
+    pub &'static str,
+    pub f32,
+    pub f32,
+    pub f32,
+); // name, def, min, max, incr
 
 // Width of the RMS window in seconds
-pub const PARAM_RMS_WINDOW_SIZE_MS: &Parameter =
-    &Parameter("WindowSizeMs", "100", 5.0, 200.0, 25.0);
+pub const PARAM_RMS_WINDOW_SIZE_MS: &Parameter = &Parameter("WindowSizeMs", "100", 5.0, 500.0, 5.0);
 
 // Milliseconds between attempted head/tail movement swaps
 pub const PARAM_FLIP_INTERVAL: &Parameter =
     &Parameter("FlipInterval", "1000", 100.0, 100.0, 2000.0);
 
 // latency fudge factor
-pub const PARAM_AUDIO_LATENCY: &Parameter = &Parameter("AudioLatencyMs", "250", 0.0, 1000.0, 50.0);
+pub const PARAM_AUDIO_LATENCY: &Parameter = &Parameter("AudioLatencyMs", "250", 0.0, 1000.0, 0.0);
+
+// auto/manual mode toggle
+pub const PARAM_AUTO_MODE: &Parameter = &Parameter("AutoMode", "true", 0.0, 1.0, 1.0);
+pub const PARAM_AUTO_MODE_THRESH: &Parameter =
+    &Parameter("AutoModeThreshold", "50", 0.0, 100.0, 1.0);
 
 // RMS thresholds at which to actuate the motors
 pub const PARAM_BODY_THRESHOLD: &Parameter =
@@ -57,6 +67,8 @@ pub const ALL_PARAMS: &[&Parameter] = &[
     PARAM_MOUTH_THRESHOLD,
     PARAM_RMS_WINDOW_SIZE_MS,
     PARAM_AUDIO_LATENCY,
+    PARAM_AUTO_MODE,
+    PARAM_AUTO_MODE_THRESH,
 ];
 
 pub struct ParameterController {
@@ -266,6 +278,24 @@ impl ParameterController {
         def.parse()
             .expect(&format!("Invalid default value {def} for {k}"))
     }
+
+    pub fn set<T>(
+        &self,
+        Parameter(k, _, _, _, _): &Parameter,
+        value: T,
+    ) -> Result<(), Box<dyn Error>>
+    where
+        T: ToString,
+    {
+        let value_str = value.to_string();
+
+        self.cache
+            .write()
+            .expect("Parameter write lock acquisition failure")
+            .insert(k.to_string(), value_str.clone());
+
+        Ok(())
+    }
 }
 
 pub fn init_param_dir() -> Result<(), Box<dyn Error>> {
@@ -291,7 +321,7 @@ pub fn init_param_dir() -> Result<(), Box<dyn Error>> {
 }
 
 pub fn param_dir() -> Result<PathBuf, Box<dyn Error>> {
-    let root = dirs::config_dir().unwrap().join("billy");
+    let root = std::path::PathBuf::from("/home/billy/.config/billy");
 
     if !root.is_dir() {
         std::fs::create_dir_all(&root)?;

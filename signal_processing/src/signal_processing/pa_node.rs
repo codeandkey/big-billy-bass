@@ -306,8 +306,9 @@ impl PaNode {
                 let pc = Rc::clone(&pc);
                 move || {
                     ((44100 * pc.borrow().get::<u32>(PARAM_AUDIO_LATENCY) / 1000) as u32
-                        + (44100.0 * pc.borrow().get::<f32>(PARAM_RMS_WINDOW_SIZE_MS) / 1000.0)
-                            as u32)
+                        + (44100.0 * pc.borrow().get::<f32>(PARAM_RMS_WINDOW_SIZE_MS)
+                            / 2.0
+                            / 1000.0) as u32)
                         * 4
                 }
             };
@@ -339,7 +340,7 @@ impl PaNode {
                                 1.0 / *volume_scale.borrow()
                             };
 
-                            let output = bytes
+                            let output: Vec<i16> = bytes
                                 .chunks(2)
                                 .map(|chunk| {
                                     (i16::from_le_bytes([chunk[0], chunk[1]]) as f32 * volume)
@@ -354,7 +355,6 @@ impl PaNode {
                                         as i16
                                 })
                                 .collect();
-
                             // user callback
                             user_cb.borrow_mut()(output, audio_output);
                             if let Some(sink) = sink_ref.borrow_mut().as_mut() {

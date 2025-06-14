@@ -2,7 +2,7 @@ pub mod pa_node;
 
 use circular_buffer::CircularBuffer;
 use rustfft::num_complex::Complex;
-use std::f32::consts::PI;
+use std::{f32::consts::PI, sync::Arc};
 
 const FF: usize = 3;
 const FB: usize = 2;
@@ -151,71 +151,6 @@ impl BiquadFilter {
     }
 }
 
-use std::collections::VecDeque;
-use std::sync::Arc;
-
-/// A structure for calculating the moving root mean square (RMS) of a sequence of samples.
-///
-/// # Fields
-///
-/// * `running_sum` - The running sum of the squared samples.
-/// * `samples` - A deque containing the most recent samples.
-/// * `target_size` - The desired size of the sample buffer.
-///
-pub struct MovingRms {
-    running_sum: f32,
-    samples: VecDeque<f32>,
-    target_size: usize,
-}
-
-impl MovingRms {
-    /// Creates a new instance of `MovingRms`.
-    ///
-    /// This function initializes a new `MovingRms` instance with an empty sample buffer,
-    /// a running sum of zero, and a target size of zero.
-    ///
-    /// # Returns
-    ///
-    /// A new `MovingRms` instance.
-    pub fn new() -> Self {
-        Self {
-            running_sum: 0.0,
-            samples: VecDeque::new(),
-            target_size: 0,
-        }
-    }
-
-    /// Updates the moving RMS calculation with a new sample.
-    ///
-    /// # Arguments
-    ///
-    /// * `sample` - The new sample to be added to the moving RMS calculation.
-    ///
-    /// # Returns
-    ///
-    /// The current RMS value after adding the new sample.
-    pub fn update(&mut self, sample: f32) -> f32 {
-        self.samples.push_front(sample.powf(2.0));
-        self.running_sum += sample.powf(2.0);
-        self.set_size(self.target_size);
-        f32::sqrt(self.running_sum / self.target_size as f32)
-    }
-
-    /// Sets the target size for the moving RMS calculation.
-    ///
-    /// # Arguments
-    ///
-    /// * `target_size` - The desired size of the sample buffer.
-    ///
-    pub fn set_size(&mut self, target_size: usize) {
-        while target_size < self.samples.len() {
-            if let Some(sample) = self.samples.pop_back() {
-                self.running_sum -= sample;
-            }
-        }
-        self.target_size = target_size;
-    }
-}
 
 /// Performs an FFT on the given data and applies a window function.
 ///

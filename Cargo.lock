@@ -140,9 +140,9 @@ checksum = "b67261db007b5f4cf8cba393c1a5c511a5cc072339ce16e12aeba1d7b9b77946"
 
 [[package]]
 name = "circular-buffer"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dacb91f972298e70fc507a2ffcaf1545807f1a36da586fb846646030adc542f"
+checksum = "23bdce1da528cadbac4654b5632bfcd8c6c63e25b1d42cea919a95958790b51d"
 
 [[package]]
 name = "color-eyre"
@@ -176,6 +176,7 @@ name = "common"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "circular-buffer 1.1.0",
  "dirs",
  "log",
  "notify 8.0.0",
@@ -260,7 +261,7 @@ dependencies = [
 name = "dashboard"
 version = "0.1.0"
 dependencies = [
- "circular-buffer 1.0.0",
+ "circular-buffer 1.1.0",
  "color-eyre",
  "common",
  "crossterm",
